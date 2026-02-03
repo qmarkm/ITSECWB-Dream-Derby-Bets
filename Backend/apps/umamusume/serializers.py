@@ -1,0 +1,102 @@
+from rest_framework import serializers
+from .models import Umas, Skill, Umamusume, Aptitude
+
+class UmaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Umas
+        fields = ['id', 'name', 'avatar_url']
+        read_only_fields = ['id']
+
+class SkillSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = ['id', 'name', 'description']
+        read_only_fields = ['id']
+
+class AptitudeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Aptitude
+        fields = [
+            'id',
+            'turf', 'dirt',  # Surface
+            'short', 'mile', 'medium', 'long',  # Distance
+            'front', 'pace', 'late', 'end'  # Strategy
+        ]
+        read_only_fields = ['id']
+
+class UmamusumeSerializer(serializers.ModelSerializer):
+    # Reading/displaying Umamusume data
+
+    base_uma = UmaSerializer(source='uma', read_only=True)
+    aptitudes = AptitudeSerializer(read_only=True)
+    skills = SkillSerializer(many=True, read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True)
+
+    class Meta:
+        model = Umamusume
+        fields = [
+            'id', 'name', 'avatar_url', 'user', 'user_username',
+            'base_uma',
+            'speed', 'stamina', 'power', 'guts', 'wit',
+            'skills', 'aptitudes', 'created_at'
+        ]
+        read_only_fields = ['id', 'user', 'created_at']
+
+class AptitudeUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Aptitude
+        fields = [
+            'turf', 'dirt',
+            'short', 'mile', 'medium', 'long',
+            'front', 'pace', 'late', 'end'
+        ]
+
+class UmamusumeCreateSerializer(serializers.ModelSerializer):
+    # Creating/updating Umamusume data
+    skill_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Skill.objects.all(),
+        many=True,
+        write_only=True,
+        required=False
+    )
+    base_uma_id = serializers.PrimaryKeyRelatedField(
+        queryset=Umas.objects.all(),
+        source='uma',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
+    aptitudes = AptitudeUpdateSerializer(required=False)
+
+    class Meta:
+        model = Umamusume
+        fields = [
+            'name', 'avatar_url', 'base_uma_id',
+            'speed', 'stamina', 'power', 'guts', 'wit',
+            'skill_ids', 'aptitudes'
+        ]
+
+    def create(self, validated_data):
+        skill_ids = validated_data.pop('skill_ids', [])
+        aptitudes_data = validated_data.pop('aptitudes', None)
+
+        umamusume = Umamusume.objects.create(**validated_data)
+        umamusume.skills.set(skill_ids)
+        if aptitudes_data:
+            Aptitude.objects.create(umamusume=umamusume, **aptitudes_data)
+        else:
+            Aptitude.objects.create(umamusume=umamusume)
+
+        return umamusume
+
+    def update(self, instance, validated_data):
+        skill_ids = validated_data.pop('skill_ids', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if skill_ids is not None:
+            instance.skills.set(skill_ids)
+
+        return instance
