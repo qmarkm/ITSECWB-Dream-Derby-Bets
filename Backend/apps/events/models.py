@@ -78,7 +78,8 @@ class Bids(models.Model):
     bidder = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bids')
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=5000.00)
     created_at = models.DateTimeField(auto_now_add=True)
-    uma = models.ForeignKey(Results, on_delete=models.CASCADE, related_name='bids')
+    # Nullable so existing rows can be migrated without a default
+    uma = models.ForeignKey(Results, on_delete=models.CASCADE, related_name='bids', null=True, blank=True)
 
     class Meta:
         db_table = 'race_bids'

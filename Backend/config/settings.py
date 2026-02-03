@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
+from urllib.parse import urlparse, unquote
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -86,18 +87,34 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
+def _database_config_from_url(database_url: str) -> dict:
+    """
+    Parse DATABASE_URL into Django DATABASES['default'] dict.
+    Expected MySQL format:
+      mysql://USER:PASSWORD@HOST:PORT/DB_NAME
+    """
+    parsed = urlparse(database_url)
+
+    if parsed.scheme not in ('mysql', 'mysql2'):
+        raise ValueError("DATABASE_URL must start with mysql://")
+
+    if not parsed.path or parsed.path == '/':
+        raise ValueError("DATABASE_URL is missing the database name (path)")
+
+    return {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'dream_derby_bets_db',
-        'USER': 'root',
-        'PASSWORD': 'password123',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'NAME': parsed.path.lstrip('/'),
+        'USER': unquote(parsed.username or ''),
+        'PASSWORD': unquote(parsed.password or ''),
+        'HOST': parsed.hostname or '',
+        'PORT': int(parsed.port or 3306),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        }
+        },
     }
+
+DATABASES = {
+    'default': _database_config_from_url(config('DATABASE_URL')),
 }
 
 

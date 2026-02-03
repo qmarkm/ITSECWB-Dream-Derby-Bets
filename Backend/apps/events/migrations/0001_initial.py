@@ -11,7 +11,8 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('umamusume', '0002_umas_skill_is_unique_skill_uma_umamusume_uma'),
+        # Ensure all umamusume migrations (if any) run before events migrations
+        ('umamusume', '__first__'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
