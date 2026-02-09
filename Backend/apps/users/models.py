@@ -78,7 +78,7 @@ class UserProfile(models.Model):
 
     # Profile customization
     bio = models.TextField(blank=True, null=True, max_length=500)
-    avatar_url = models.URLField(blank=True, null=True)
+    avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
     favorite_umamusume = models.CharField(max_length=100, blank=True, null=True)
 
     # Timestamps

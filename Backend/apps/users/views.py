@@ -112,7 +112,7 @@ def update_profile(request):
     Update the current user's profile.
     PATCH /api/users/profile/update/
 
-    Allowed fields: bio, avatar_url, favorite_umamusume
+    Allowed fields: bio, avatar, favorite_umamusume
     """
     try:
         profile = request.user.profile
@@ -132,10 +132,10 @@ def update_profile(request):
 @permission_classes([IsAuthenticated])
 def update_account(request):
     """
-    Update the current user's account information (username and email).
+    Update the current user's account information (username, email, full_name, and phone_number).
     PATCH /api/users/account/update/
 
-    Allowed fields: username, email
+    Allowed fields: username, email, full_name, phone_number
     """
     serializer = UserUpdateSerializer(request.user, data=request.data, partial=True)
     if serializer.is_valid():
@@ -234,7 +234,7 @@ def upload_avatar(request):
     POST /api/users/avatar/upload/
 
     Expected: multipart/form-data with 'avatar' file
-    Returns: Full user data with updated avatar_url
+    Returns: Full user data with updated avatar
     """
     if 'avatar' not in request.FILES:
         return Response(
@@ -266,24 +266,11 @@ def upload_avatar(request):
         profile = request.user.profile
 
         # Delete old avatar if it exists
-        if profile.avatar_url:
-            old_path = profile.avatar_url.replace(settings.MEDIA_URL, '')
-            old_file_path = os.path.join(settings.MEDIA_ROOT, old_path)
-            if os.path.exists(old_file_path):
-                os.remove(old_file_path)
+        if profile.avatar:
+            profile.avatar.delete(save=False)
 
-        # Create unique filename: avatars/user_{id}_{timestamp}{extension}
-        import time
-        timestamp = int(time.time())
-        filename = f"user_{request.user.id}_{timestamp}{file_extension}"
-        filepath = os.path.join('avatars', filename)
-
-        # Save the file
-        saved_path = default_storage.save(filepath, avatar_file)
-
-        # Update profile with new avatar URL
-        avatar_url = f"{settings.MEDIA_URL}{saved_path}"
-        profile.avatar_url = avatar_url
+        # Save the new avatar (ImageField handles the upload automatically)
+        profile.avatar = avatar_file
         profile.save()
 
         # Return updated user data

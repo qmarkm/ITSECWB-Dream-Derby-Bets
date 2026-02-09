@@ -18,7 +18,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'total_winnings',
             'total_losses',
             'bio',
-            'avatar_url',
+            'avatar',
             'favorite_umamusume',
             'win_rate',
             'net_profit',
@@ -43,7 +43,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
         model = UserProfile
         fields = [
             'bio',
-            'avatar_url',
+            'avatar',
             'favorite_umamusume',
         ]
 
@@ -62,11 +62,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer for updating User account information (username and email).
+    Serializer for updating User account information (username, email, full_name, and phone_number).
     """
     class Meta:
         model = User
-        fields = ['username', 'email']
+        fields = ['username', 'email', 'full_name', 'phone_number']
 
     def validate_username(self, value):
         """Ensure username is unique (excluding current user)"""
@@ -85,11 +85,11 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
-    avatar_url = serializers.URLField(required=False, allow_blank=True)
+    avatar = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'full_name', 'phone_number', 'password', 'password_confirm', 'avatar_url']
+        fields = ['username', 'email', 'full_name', 'phone_number', 'password', 'password_confirm', 'avatar']
 
     def validate(self, data):
         if data['password'] != data['password_confirm']:
@@ -98,7 +98,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password_confirm')
-        avatar_url = validated_data.pop('avatar_url', None)
+        avatar = validated_data.pop('avatar', None)
 
         user = User.objects.create(
             username=validated_data['username'],
@@ -110,9 +110,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         user.set_password(validated_data['password'])
         user.save()
 
-        # Update profile with avatar_url if provided
-        if avatar_url:
-            user.profile.avatar_url = avatar_url
+        # Update profile with avatar if provided
+        if avatar:
+            user.profile.avatar = avatar
             user.profile.save()
 
         return user
