@@ -56,7 +56,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'is_active', 'date_joined', 'profile']
+        fields = ['id', 'username', 'email', 'full_name', 'phone_number', 'is_active', 'date_joined', 'profile']
         read_only_fields = ['id', 'date_joined']
 
 
@@ -85,25 +85,34 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
+    avatar_url = serializers.URLField(required=False, allow_blank=True)
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'password_confirm']
+        fields = ['username', 'email', 'full_name', 'phone_number', 'password', 'password_confirm', 'avatar_url']
 
     def validate(self, data):
         if data['password'] != data['password_confirm']:
             raise serializers.ValidationError("Passwords do not match")
         return data
-    
+
     def create(self, validated_data):
         validated_data.pop('password_confirm')
+        avatar_url = validated_data.pop('avatar_url', None)
 
         user = User.objects.create(
             username=validated_data['username'],
             email=validated_data['email'],
+            full_name=validated_data.get('full_name', ''),
+            phone_number=validated_data.get('phone_number', ''),
         )
 
         user.set_password(validated_data['password'])
         user.save()
+
+        # Update profile with avatar_url if provided
+        if avatar_url:
+            user.profile.avatar_url = avatar_url
+            user.profile.save()
 
         return user

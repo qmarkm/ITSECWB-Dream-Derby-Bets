@@ -7,6 +7,8 @@ export interface User {
   id: number;
   username: string;
   email: string;
+  fullName?: string;
+  phoneNumber?: string;
   profilePicture?: string;
   balance: number;
   createdAt: string;
@@ -28,7 +30,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<boolean>;
-  signup: (username: string, email: string, password: string, passwordConfirm: string) => Promise<{ success: boolean; error?: string }>;
+  signup: (username: string, email: string, password: string, passwordConfirm: string, fullName?: string, phoneNumber?: string, avatarUrl?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   updateProfile: (data: ProfileUpdateData) => Promise<void>;
@@ -43,6 +45,8 @@ const mapBackendUser = (backendUser: BackendUser): User => ({
   id: backendUser.id,
   username: backendUser.username,
   email: backendUser.email,
+  fullName: backendUser.full_name,
+  phoneNumber: backendUser.phone_number,
   profilePicture: backendUser.profile.avatar_url || undefined,
   balance: Number(backendUser.profile.balance),
   createdAt: backendUser.date_joined,
@@ -113,7 +117,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     username: string,
     email: string,
     password: string,
-    passwordConfirm: string
+    passwordConfirm: string,
+    fullName?: string,
+    phoneNumber?: string,
+    avatarUrl?: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       // Call register API
@@ -122,6 +129,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         password,
         password_confirm: passwordConfirm,
+        full_name: fullName,
+        phone_number: phoneNumber,
+        avatar_url: avatarUrl,
       });
 
       // After registration, log the user in

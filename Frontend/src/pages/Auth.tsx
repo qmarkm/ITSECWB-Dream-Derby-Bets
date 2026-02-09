@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, User, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, Sparkles, Phone, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,9 @@ const Auth: React.FC = () => {
   // Signup state
   const [signupUsername, setSignupUsername] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
+  const [signupFullName, setSignupFullName] = useState("");
+  const [signupPhoneNumber, setSignupPhoneNumber] = useState("");
+  const [signupAvatarUrl, setSignupAvatarUrl] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
 
@@ -68,7 +71,15 @@ const Auth: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const result = await signup(signupUsername, signupEmail, signupPassword, signupConfirmPassword);
+      const result = await signup(
+        signupUsername,
+        signupEmail,
+        signupPassword,
+        signupConfirmPassword,
+        signupFullName || undefined,
+        signupPhoneNumber || undefined,
+        signupAvatarUrl || undefined
+      );
 
       if (result.success) {
         toast.success("Account created! Welcome to UmaBet!");
@@ -175,6 +186,21 @@ const Auth: React.FC = () => {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="signup-fullname">Full Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-fullname"
+                        type="text"
+                        placeholder="John Doe"
+                        value={signupFullName}
+                        onChange={(e) => setSignupFullName(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="signup-email">Email</Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -186,6 +212,36 @@ const Auth: React.FC = () => {
                         onChange={(e) => setSignupEmail(e.target.value)}
                         className="pl-10"
                         required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-phone">Phone Number</Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-phone"
+                        type="tel"
+                        placeholder="+1 (555) 123-4567"
+                        value={signupPhoneNumber}
+                        onChange={(e) => setSignupPhoneNumber(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-avatar">Profile Photo URL</Label>
+                    <div className="relative">
+                      <Image className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-avatar"
+                        type="url"
+                        placeholder="https://example.com/photo.jpg"
+                        value={signupAvatarUrl}
+                        onChange={(e) => setSignupAvatarUrl(e.target.value)}
+                        className="pl-10"
                       />
                     </div>
                   </div>

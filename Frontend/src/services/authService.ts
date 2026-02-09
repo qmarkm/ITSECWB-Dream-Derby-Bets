@@ -8,8 +8,11 @@ export interface LoginCredentials {
 export interface RegisterCredentials {
   username: string;
   email: string;
+  full_name?: string;
+  phone_number?: string;
   password: string;
   password_confirm: string;
+  avatar_url?: string;
 }
 
 export interface LoginResponse {
@@ -35,6 +38,8 @@ export interface User {
   id: number;
   username: string;
   email: string;
+  full_name?: string;
+  phone_number?: string;
   is_active: boolean;
   date_joined: string;
   profile: UserProfile;
