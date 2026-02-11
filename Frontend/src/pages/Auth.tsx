@@ -40,13 +40,13 @@ const Auth: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const success = await login(loginUsername, loginPassword);
+      const result = await login(loginUsername, loginPassword);
 
-      if (success) {
+      if (result.success) {
         toast.success("Welcome back!");
         navigate("/");
       } else {
-        toast.error("Invalid username or password");
+        toast.error(result.error || "Invalid username or password");
       }
     } catch (error) {
       toast.error("An error occurred during login");

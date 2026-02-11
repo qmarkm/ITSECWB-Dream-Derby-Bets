@@ -58,6 +58,17 @@ class User(AbstractBaseUser):
     def has_module_perms(self, app_label):
         return self.is_superuser
 
+class LoginAttempts(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='user_id')
+    login_attempts = models.IntegerField(default=0)
+    locked_status = models.BooleanField(default=False)
+    unlocks_on = models.DateTimeField(null=True)
+
+    class Meta:
+        db_table = 'user_login_attempts'
+    
+    def __str__(self):
+        return f"{self.user.username}'s login attempts"
 
 class UserProfile(models.Model):
     """

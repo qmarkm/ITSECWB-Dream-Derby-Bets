@@ -29,7 +29,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signup: (username: string, email: string, password: string, passwordConfirm: string, fullName?: string, phoneNumber?: string, avatarUrl?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -92,7 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       // Call login API
       const { access, refresh } = await authService.login({ username, password });
@@ -106,10 +106,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const mappedUser = mapBackendUser(backendUser);
       setUser(mappedUser);
 
-      return true;
+      return { success: true };
     } catch (error: any) {
       console.error("Login failed:", error);
-      return false;
+      const errorMessage = error.response?.data?.error || "Invalid username or password";
+      return { success: false, error: errorMessage };
     }
   };
 
@@ -135,9 +136,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       // After registration, log the user in
-      const loginSuccess = await login(username, password);
+      const loginResult = await login(username, password);
 
-      if (loginSuccess) {
+      if (loginResult.success) {
         return { success: true };
       } else {
         return { success: false, error: "Registration successful but login failed" };

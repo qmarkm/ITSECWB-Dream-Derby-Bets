@@ -6,9 +6,8 @@ urlpatterns = [
     path('', views.index, name='index'),
     path('profile/<str:username>/', views.view_profile, name='view_profile'),
 
-    # Authentication (placeholders - use /api/auth/token/ for real auth)
+    # Authentication (login is handled at /api/auth/token/)
     path('create/', views.create_profile, name='create_profile'),
-    path('login/', views.login, name='login'),
     path('logout/', views.logout, name='logout'),
 
     # Current user operations

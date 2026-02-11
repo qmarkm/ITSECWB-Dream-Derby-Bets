@@ -2,12 +2,16 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.exceptions import AuthenticationFailed
 from decimal import Decimal
 from django.core.files.storage import default_storage
 from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
 import os
-from .models import User, UserProfile
-from .serializers import UserSerializer, UserRegistrationSerializer, UserProfileUpdateSerializer, UserUpdateSerializer
+from .models import User, UserProfile, LoginAttempts
+from .serializers import UserSerializer, UserRegistrationSerializer, UserProfileUpdateSerializer, UserUpdateSerializer, LoginAttemptsSerializer
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -56,28 +60,97 @@ def create_profile(request):
     if serializer.is_valid():
         user = serializer.save()
         user_data = UserSerializer(user).data
-        return Response(user_data, status=status.HTTP_201_CREATED)
+
+        if create_login_attempts(user):
+            return Response(user_data, status=status.HTTP_201_CREATED)
+        user.delete()
+        return Response({'error': 'Failed to create login attempts record.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login(request):
-    """
-    Login endpoint (for reference - JWT handles this in urls).
-    POST /api/users/login/
+def create_login_attempts(user):
+    try:
+        LoginAttempts.objects.create(
+            user=user,
+            login_attempts=0,
+            locked_status=False,
+            unlocks_on=None
+        )
+        return True
+    except Exception:
+        return False
 
-    Note: You should use /api/auth/token/ instead for JWT login.
-    This is here just as a placeholder/redirect.
+
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_DURATION_MINUTES = 15
+
+class CustomTokenObtainPairView(TokenObtainPairView):
     """
-    return Response({
-        'message': 'Use /api/auth/token/ for login with JWT',
-        'endpoint': '/api/auth/token/',
-        'method': 'POST',
-        'body': {
-            'username': 'your_username',
-            'password': 'your_password'
-        }
-    })
+    Custom login view that wraps simplejwt's TokenObtainPairView
+    with login attempt tracking and account locking.
+
+    Flow:
+    1. Look up the user by username
+    2. Check if account is locked (and auto-unlock if lockout expired)
+    3. Let simplejwt validate credentials via super().post()
+    4. On success: reset attempts to 0, return tokens
+    5. On failure: increment attempts, lock if limit reached
+    """
+
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+
+        # Step 1: Find the user
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            # Don't reveal whether the user exists — just return generic error
+            return Response(
+                {'error': 'Invalid credentials.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Step 2: Get or create login attempts record
+        login_attempt, _ = LoginAttempts.objects.get_or_create(user=user)
+
+        # Step 3: Check if account is locked
+        if login_attempt.locked_status:
+            if login_attempt.unlocks_on and timezone.now() >= login_attempt.unlocks_on:
+                # Lockout expired — unlock the account
+                login_attempt.locked_status = False
+                login_attempt.login_attempts = 0
+                login_attempt.unlocks_on = None
+                login_attempt.save()
+            else:
+                return Response(
+                    {'error': 'Account is locked. Try again later.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # Step 4: Let simplejwt handle the actual authentication
+        try:
+            response = super().post(request, *args, **kwargs)
+        except AuthenticationFailed:
+            # Failed — increment attempts
+            login_attempt.login_attempts += 1
+
+            if login_attempt.login_attempts >= MAX_LOGIN_ATTEMPTS:
+                login_attempt.locked_status = True
+                login_attempt.unlocks_on = timezone.now() + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+
+            login_attempt.save()
+
+            return Response(
+                {'error': 'Invalid credentials.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Step 5: Success — reset attempts
+        login_attempt.login_attempts = 0
+        login_attempt.locked_status = False
+        login_attempt.unlocks_on = None
+        login_attempt.save()
+
+        return response
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

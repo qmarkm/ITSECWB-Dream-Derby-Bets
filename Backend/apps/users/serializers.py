@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, UserProfile
+from .models import User, UserProfile, LoginAttempts
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """
@@ -116,3 +116,22 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             user.profile.save()
 
         return user
+    
+class LoginAttemptsSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = LoginAttempts
+        fields = ['id', 'login_attempts', 'locked_status', 'unlocks_on']
+        read_only_fields = ['id', 'login_attempts', 'locked_status', 'unlocks_on']
+
+    def validate_login_attempts(self, value):
+        if not isinstance(value, int) or value < 0:
+            raise serializers.ValidationError("login_attempts must be a non-negative integer.")
+        return value
+
+    def validate_unlocks_on(self, value):
+        if value is not None:
+            from django.utils import timezone
+            if value < timezone.now():
+                raise serializers.ValidationError("unlocks_on cannot be in the past.")
+        return value
