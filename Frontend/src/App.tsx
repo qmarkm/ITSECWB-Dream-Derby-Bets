@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import AdminPanel from "./pages/AdminPanel";
 import RaceDetail from "./pages/RaceDetail";
 import Profile from "./pages/Profile";
 import UserProfile from "./pages/UserProfile";
@@ -28,6 +29,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/adminpanel" element={<AdminPanel />} />
               <Route path="/race/:id" element={<RaceDetail />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/:username" element={<UserProfile />} />

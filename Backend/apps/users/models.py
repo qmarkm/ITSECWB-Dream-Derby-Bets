@@ -116,6 +116,15 @@ class UserProfile(models.Model):
         """Calculate net profit/loss"""
         return self.total_winnings - self.total_losses
 
+    @property
+    def avatar_url(self):
+        """
+        Convenience property to expose the avatar URL to the API.
+        """
+        if self.avatar and hasattr(self.avatar, 'url'):
+            return self.avatar.url
+        return None
+
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):

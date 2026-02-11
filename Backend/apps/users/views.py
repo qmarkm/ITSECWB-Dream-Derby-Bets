@@ -11,7 +11,14 @@ from django.utils import timezone
 from datetime import timedelta
 import os
 from .models import User, UserProfile, LoginAttempts
-from .serializers import UserSerializer, UserRegistrationSerializer, UserProfileUpdateSerializer, UserUpdateSerializer, LoginAttemptsSerializer
+from .serializers import (
+    UserSerializer,
+    UserRegistrationSerializer,
+    UserProfileUpdateSerializer,
+    UserUpdateSerializer,
+    LoginAttemptsSerializer,
+    AdminUserUpdateSerializer,
+)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -23,6 +30,39 @@ def index(request):
     users = User.objects.all()
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
+
+
+def _ensure_admin(user):
+    """
+    Helper to ensure the requesting user has admin privileges.
+    """
+    return user.is_staff and user.is_superuser
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def admin_user_list(request):
+    """
+    Admin-only endpoint to list and create users.
+    GET /api/users/admin/
+    POST /api/users/admin/
+    """
+    if not _ensure_admin(request.user):
+        return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'GET':
+        users = User.objects.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data)
+
+    # POST - create user (reuses registration serializer)
+    serializer = UserRegistrationSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        create_login_attempts(user)
+        user_data = UserSerializer(user).data
+        return Response(user_data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -78,6 +118,39 @@ def create_login_attempts(user):
         return True
     except Exception:
         return False
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def admin_user_detail(request, user_id):
+    """
+    Admin-only endpoint to retrieve, update, or delete a specific user.
+    GET /api/users/admin/<user_id>/
+    PATCH /api/users/admin/<user_id>/
+    DELETE /api/users/admin/<user_id>/
+    """
+    if not _ensure_admin(request.user):
+        return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+
+    if request.method == 'PATCH':
+        serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(UserSerializer(user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # DELETE
+    user.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 MAX_LOGIN_ATTEMPTS = 5
