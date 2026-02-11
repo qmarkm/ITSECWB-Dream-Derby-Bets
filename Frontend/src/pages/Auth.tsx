@@ -58,13 +58,40 @@ const Auth: React.FC = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (signupPassword !== signupConfirmPassword) {
-      toast.error("Passwords do not match");
+    // Username validation
+    if (!/^[a-zA-Z0-9_]+$/.test(signupUsername)) {
+      toast.error("Username can only contain letters, numbers, and underscores");
+      return;
+    }
+    if (signupUsername.length < 3 || signupUsername.length > 30) {
+      toast.error("Username must be between 3 and 30 characters");
       return;
     }
 
+    // Full name validation (optional field)
+    if (signupFullName && !/^[a-zA-Z\s\-\.\']+$/.test(signupFullName)) {
+      toast.error("Full name can only contain letters, spaces, hyphens, dots, and apostrophes");
+      return;
+    }
+
+    // Phone number validation (optional field)
+    if (signupPhoneNumber && !/^\+?[0-9\s\-\(\)]{7,20}$/.test(signupPhoneNumber)) {
+      toast.error("Please enter a valid phone number");
+      return;
+    }
+
+    // Password validation
     if (signupPassword.length < 8) {
       toast.error("Password must be at least 8 characters");
+      return;
+    }
+    if (/^\d+$/.test(signupPassword)) {
+      toast.error("Password cannot be entirely numeric");
+      return;
+    }
+
+    if (signupPassword !== signupConfirmPassword) {
+      toast.error("Passwords do not match");
       return;
     }
 
@@ -181,6 +208,10 @@ const Auth: React.FC = () => {
                         onChange={(e) => setSignupUsername(e.target.value)}
                         className="pl-10"
                         required
+                        minLength={3}
+                        maxLength={30}
+                        pattern="^[a-zA-Z0-9_]+$"
+                        title="Letters, numbers, and underscores only"
                       />
                     </div>
                   </div>

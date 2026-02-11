@@ -1,4 +1,7 @@
+import re
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import User, UserProfile, LoginAttempts
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -47,6 +50,19 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             'favorite_umamusume',
         ]
 
+    def validate_bio(self, value):
+        if value:
+            # Strip HTML tags to prevent XSS
+            value = re.sub(r'<[^>]+>', '', value)
+            if len(value) > 500:
+                raise serializers.ValidationError("Bio must be at most 500 characters.")
+        return value.strip() if value else value
+
+    def validate_favorite_umamusume(self, value):
+        if value and not re.match(r'^[a-zA-Z0-9\s\-\.\']+$', value):
+            raise serializers.ValidationError("Favorite umamusume can only contain letters, numbers, spaces, hyphens, dots, and apostrophes.")
+        return value.strip() if value else value
+
 
 class UserSerializer(serializers.ModelSerializer):
     """
@@ -69,7 +85,13 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = ['username', 'email', 'full_name', 'phone_number']
 
     def validate_username(self, value):
-        """Ensure username is unique (excluding current user)"""
+        """Ensure username is unique and valid format (excluding current user)"""
+        if not re.match(r'^[a-zA-Z0-9_]+$', value):
+            raise serializers.ValidationError("Username can only contain letters, numbers, and underscores.")
+        if len(value) < 3:
+            raise serializers.ValidationError("Username must be at least 3 characters.")
+        if len(value) > 30:
+            raise serializers.ValidationError("Username must be at most 30 characters.")
         user = self.instance
         if User.objects.exclude(pk=user.pk).filter(username=value).exists():
             raise serializers.ValidationError("This username is already taken.")
@@ -82,6 +104,16 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("This email is already in use.")
         return value
 
+    def validate_full_name(self, value):
+        if value and not re.match(r'^[a-zA-Z\s\-\.\']+$', value):
+            raise serializers.ValidationError("Full name can only contain letters, spaces, hyphens, dots, and apostrophes.")
+        return value.strip() if value else value
+
+    def validate_phone_number(self, value):
+        if value and not re.match(r'^\+?[0-9\s\-\(\)]{7,20}$', value):
+            raise serializers.ValidationError("Enter a valid phone number.")
+        return value
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
@@ -91,9 +123,35 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ['username', 'email', 'full_name', 'phone_number', 'password', 'password_confirm', 'avatar']
 
+    def validate_username(self, value):
+        if not re.match(r'^[a-zA-Z0-9_]+$', value):
+            raise serializers.ValidationError("Username can only contain letters, numbers, and underscores.")
+        if len(value) < 3:
+            raise serializers.ValidationError("Username must be at least 3 characters.")
+        if len(value) > 30:
+            raise serializers.ValidationError("Username must be at most 30 characters.")
+        return value
+
+    def validate_full_name(self, value):
+        if value and not re.match(r'^[a-zA-Z\s\-\.\']+$', value):
+            raise serializers.ValidationError("Full name can only contain letters, spaces, hyphens, dots, and apostrophes.")
+        return value.strip() if value else value
+
+    def validate_phone_number(self, value):
+        if value and not re.match(r'^\+?[0-9\s\-\(\)]{7,20}$', value):
+            raise serializers.ValidationError("Enter a valid phone number (digits, spaces, hyphens, and parentheses allowed).")
+        return value
+
     def validate(self, data):
         if data['password'] != data['password_confirm']:
-            raise serializers.ValidationError("Passwords do not match")
+            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
+
+        # Enforce Django's password validators (common password, numeric-only, similarity, etc.)
+        try:
+            validate_password(data['password'])
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"password": list(e.messages)})
+
         return data
 
     def create(self, validated_data):
