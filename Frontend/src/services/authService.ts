@@ -41,6 +41,8 @@ export interface User {
   full_name?: string;
   phone_number?: string;
   is_active: boolean;
+  is_staff: boolean;
+  is_superuser: boolean;
   date_joined: string;
   profile: UserProfile;
 }
@@ -54,6 +56,16 @@ export interface ProfileUpdateData {
 export interface AccountUpdateData {
   username?: string;
   email?: string;
+}
+
+export interface AdminUserUpdateData {
+  username?: string;
+  email?: string;
+  full_name?: string;
+  phone_number?: string;
+  is_active?: boolean;
+  is_staff?: boolean;
+  is_superuser?: boolean;
 }
 
 /**
@@ -140,6 +152,37 @@ export const refreshToken = async (refreshToken: string): Promise<{ access: stri
 export const getAllUsers = async (): Promise<User[]> => {
   const response = await apiClient.get<User[]>('/api/users/');
   return response.data;
+};
+
+/**
+ * Admin-only: list all users
+ */
+export const adminGetUsers = async (): Promise<User[]> => {
+  const response = await apiClient.get<User[]>('/api/users/admin/');
+  return response.data;
+};
+
+/**
+ * Admin-only: create a new user
+ */
+export const adminCreateUser = async (credentials: RegisterCredentials): Promise<User> => {
+  const response = await apiClient.post<User>('/api/users/admin/', credentials);
+  return response.data;
+};
+
+/**
+ * Admin-only: update a user (including flags)
+ */
+export const adminUpdateUser = async (id: number, data: AdminUserUpdateData): Promise<User> => {
+  const response = await apiClient.patch<User>(`/api/users/admin/${id}/`, data);
+  return response.data;
+};
+
+/**
+ * Admin-only: delete a user
+ */
+export const adminDeleteUser = async (id: number): Promise<void> => {
+  await apiClient.delete(`/api/users/admin/${id}/`);
 };
 
 /**

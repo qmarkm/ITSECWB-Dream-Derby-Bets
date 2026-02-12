@@ -21,4 +21,8 @@ urlpatterns = [
     # Balance management
     path('balance/add/', views.add_balance, name='add_balance'),
     path('balance/deduct/', views.deduct_balance, name='deduct_balance'),
+
+    # Admin user management
+    path('admin/', views.admin_user_list, name='admin_user_list'),
+    path('admin/<int:user_id>/', views.admin_user_detail, name='admin_user_detail'),
 ]

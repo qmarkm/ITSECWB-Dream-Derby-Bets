@@ -12,6 +12,8 @@ export interface User {
   profilePicture?: string;
   balance: number;
   createdAt: string;
+  isStaff: boolean;
+  isSuperuser: boolean;
   profile: {
     bio: string | null;
     favorite_umamusume: string | null;
@@ -29,7 +31,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   signup: (username: string, email: string, password: string, passwordConfirm: string, fullName?: string, phoneNumber?: string, avatarUrl?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -50,6 +52,8 @@ const mapBackendUser = (backendUser: BackendUser): User => ({
   profilePicture: backendUser.profile.avatar_url || undefined,
   balance: Number(backendUser.profile.balance),
   createdAt: backendUser.date_joined,
+  isStaff: backendUser.is_staff,
+  isSuperuser: backendUser.is_superuser,
   profile: {
     bio: backendUser.profile.bio,
     favorite_umamusume: backendUser.profile.favorite_umamusume,
@@ -92,7 +96,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (
+    username: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string; user?: User }> => {
     try {
       // Call login API
       const { access, refresh } = await authService.login({ username, password });
@@ -105,8 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const backendUser = await authService.getCurrentUser();
       const mappedUser = mapBackendUser(backendUser);
       setUser(mappedUser);
-
-      return { success: true };
+      return { success: true, user: mappedUser };
     } catch (error: any) {
       console.error("Login failed:", error);
       const errorMessage = error.response?.data?.error || "Invalid username or password";

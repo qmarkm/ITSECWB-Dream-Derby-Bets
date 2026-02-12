@@ -10,6 +10,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     """
     win_rate = serializers.ReadOnlyField()
     net_profit = serializers.ReadOnlyField()
+    avatar_url = serializers.ReadOnlyField()
 
     class Meta:
         model = UserProfile
@@ -22,6 +23,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'total_losses',
             'bio',
             'avatar',
+            'avatar_url',
             'favorite_umamusume',
             'win_rate',
             'net_profit',
@@ -72,7 +74,18 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'full_name', 'phone_number', 'is_active', 'date_joined', 'profile']
+        fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'phone_number',
+            'is_active',
+            'is_staff',
+            'is_superuser',
+            'date_joined',
+            'profile',
+        ]
         read_only_fields = ['id', 'date_joined']
 
 
@@ -174,7 +187,25 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             user.profile.save()
 
         return user
-    
+
+
+class AdminUserUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for admin-level updates to a user, including staff/superuser flags.
+    """
+    class Meta:
+        model = User
+        fields = [
+            'username',
+            'email',
+            'full_name',
+            'phone_number',
+            'is_active',
+            'is_staff',
+            'is_superuser',
+        ]
+
+
 class LoginAttemptsSerializer(serializers.ModelSerializer):
 
     class Meta:
