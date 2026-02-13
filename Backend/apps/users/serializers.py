@@ -10,7 +10,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
     """
     win_rate = serializers.ReadOnlyField()
     net_profit = serializers.ReadOnlyField()
-    avatar_url = serializers.ReadOnlyField()
+    avatar_url = serializers.SerializerMethodField()
+
+    def get_avatar_url(self, obj):
+        if obj.avatar and hasattr(obj.avatar, 'url'):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
 
     class Meta:
         model = UserProfile

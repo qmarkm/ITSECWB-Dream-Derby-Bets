@@ -1,11 +1,15 @@
 .env
 master.key
 node_modules
+.claude
 
 # Django migrations
 Backend/apps/users/migrations/
 Backend/apps/events/migrations/
 Backend/apps/umamusume/migrations/
+
+# Python virtual environment
+Backend/venv/
 
 # React node_modules
 Frontend/node_modules/

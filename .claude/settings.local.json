@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(\"c:\\\\Users\\\\Mark Mallari\\\\Documents\\\\ITSECWB-Dream-Derby-Bets\\\\ITSECWB-Dream-Derby-Bets\\\\Backend\\\\venv\\\\Scripts\\\\pip.exe\" freeze:*)"
-    ]
-  }
-}

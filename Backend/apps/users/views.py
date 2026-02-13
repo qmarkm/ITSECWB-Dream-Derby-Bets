@@ -28,7 +28,7 @@ def index(request):
     GET /api/users/
     """
     users = User.objects.all()
-    serializer = UserSerializer(users, many=True)
+    serializer = UserSerializer(users, many=True, context={'request': request})
     return Response(serializer.data)
 
 
@@ -52,7 +52,7 @@ def admin_user_list(request):
 
     if request.method == 'GET':
         users = User.objects.all()
-        serializer = UserSerializer(users, many=True)
+        serializer = UserSerializer(users, many=True, context={'request': request})
         return Response(serializer.data)
 
     # POST - create user (reuses registration serializer)
@@ -60,7 +60,7 @@ def admin_user_list(request):
     if serializer.is_valid():
         user = serializer.save()
         create_login_attempts(user)
-        user_data = UserSerializer(user).data
+        user_data = UserSerializer(user, context={'request': request}).data
         return Response(user_data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -73,7 +73,7 @@ def view_profile(request, username):
     """
     try:
         user = User.objects.get(username=username)
-        serializer = UserSerializer(user)
+        serializer = UserSerializer(user, context={'request': request})
         return Response(serializer.data)
     except User.DoesNotExist:
         return Response(
@@ -99,7 +99,7 @@ def create_profile(request):
     serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        user_data = UserSerializer(user).data
+        user_data = UserSerializer(user, context={'request': request}).data
 
         if create_login_attempts(user):
             return Response(user_data, status=status.HTTP_201_CREATED)
@@ -138,14 +138,14 @@ def admin_user_detail(request, user_id):
         return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = UserSerializer(user)
+        serializer = UserSerializer(user, context={'request': request})
         return Response(serializer.data)
 
     if request.method == 'PATCH':
         serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(UserSerializer(user).data)
+            return Response(UserSerializer(user, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     # DELETE
@@ -248,7 +248,7 @@ def get_current_user(request):
 
     Requires: Authorization header with valid JWT token
     """
-    serializer = UserSerializer(request.user)
+    serializer = UserSerializer(request.user, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['PATCH'])
@@ -270,7 +270,7 @@ def update_profile(request):
     if serializer.is_valid():
         serializer.save()
         # Return full user data with updated profile
-        user_serializer = UserSerializer(request.user)
+        user_serializer = UserSerializer(request.user, context={'request': request})
         return Response(user_serializer.data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -287,7 +287,7 @@ def update_account(request):
     if serializer.is_valid():
         serializer.save()
         # Return full user data with updated info
-        user_serializer = UserSerializer(request.user)
+        user_serializer = UserSerializer(request.user, context={'request': request})
         return Response(user_serializer.data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -325,7 +325,7 @@ def add_balance(request):
     profile.balance += amount
     profile.save()
 
-    user_serializer = UserSerializer(request.user)
+    user_serializer = UserSerializer(request.user, context={'request': request})
     return Response(user_serializer.data)
 
 @api_view(['POST'])
@@ -369,7 +369,7 @@ def deduct_balance(request):
     profile.balance -= amount
     profile.save()
 
-    user_serializer = UserSerializer(request.user)
+    user_serializer = UserSerializer(request.user, context={'request': request})
     return Response(user_serializer.data)
 
 @api_view(['POST'])
@@ -420,7 +420,7 @@ def upload_avatar(request):
         profile.save()
 
         # Return updated user data
-        user_serializer = UserSerializer(request.user)
+        user_serializer = UserSerializer(request.user, context={'request': request})
         return Response(user_serializer.data)
 
     except UserProfile.DoesNotExist:
