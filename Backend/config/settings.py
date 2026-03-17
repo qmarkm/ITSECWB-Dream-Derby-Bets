@@ -177,7 +177,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
-     'DEFAULT_THROTTLE_CLASSES': [
+    'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle'
     ],
@@ -185,6 +185,9 @@ REST_FRAMEWORK = {
         'anon': '10/day',
         'user': '100/day'
     },
+    # DEBUG=True  → full exception class, message, and stack trace
+    # DEBUG=False → generic "unexpected error" message only
+    'EXCEPTION_HANDLER': 'config.exception_handler.custom_exception_handler',
 }
 
 # JWT Settings
