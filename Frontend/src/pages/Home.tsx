@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { Trophy, Calendar, Zap, Plus } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { EventCard } from "@/components/EventCard";
@@ -74,10 +74,18 @@ const Home: React.FC = () => {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Place your bets on your favorite Umamusumes and watch them race to glory!
           </p>
-          <Button variant="hero" size="lg" onClick={() => setCreateModalOpen(true)}>
-            <Plus className="h-5 w-5 mr-2" />
-            Create New Race
-          </Button>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <Button variant="hero" size="lg" onClick={() => setCreateModalOpen(true)}>
+              <Plus className="h-5 w-5 mr-2" />
+              Create New Race
+            </Button>
+            <Button variant="outline" size="lg" asChild>
+              <Link to="/umas">
+                <Trophy className="h-5 w-5 mr-2" />
+                Browse Umas
+              </Link>
+            </Button>
+          </div>
         </section>
 
         {/* Stats */}

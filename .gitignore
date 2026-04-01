@@ -11,5 +11,14 @@ Backend/apps/umamusume/migrations/
 # Python virtual environment
 Backend/venv/
 
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
 # React node_modules
 Frontend/node_modules/
+
+# Markdown files
+nul
+PROGRESS.md

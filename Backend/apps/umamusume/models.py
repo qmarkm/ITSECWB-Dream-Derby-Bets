@@ -6,6 +6,8 @@ from django.utils.translation import gettext_lazy as _
 class Umas(models.Model):
     name = models.CharField(max_length=100)
     avatar_url = models.URLField(blank=True)
+    is_active = models.BooleanField(default=True)
+
     class Meta:
         db_table = 'umas'
 

@@ -15,6 +15,8 @@ export interface BaseUma {
     id: number;
     name: string;
     avatar_url: string | null;
+    is_active: boolean;
+    skills: Skill[];
 }
 
 export interface Uma {
@@ -142,5 +144,69 @@ export const deleteUma = async (id: number): Promise<void> => {
 
 export const updateUma = async (id: number, data: Partial<NewUmaProfile>): Promise<Uma> => {
     const response = await apiClient.patch<Uma>(`/api/umamusume/update/${id}`, data);
+    return response.data;
+};
+
+export interface BaseUmaCreateData {
+    name: string;
+    avatar_url?: string;
+}
+
+export interface CsvImportError {
+    row: number;
+    name: string;
+    reason: string;
+}
+
+export interface CsvImportResult {
+    created: number;
+    skipped: number;
+    error_count: number;
+    errors: CsvImportError[];
+}
+
+export const adminCreateBaseUma = async (data: BaseUmaCreateData): Promise<BaseUma> => {
+    const response = await apiClient.post<BaseUma>('/api/umamusume/uma/create/', data);
+    return response.data;
+};
+
+export const adminImportUmasCSV = async (file: File): Promise<CsvImportResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post<CsvImportResult>('/api/umamusume/uma/import/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+};
+
+export const adminCreateSkill = async (data: { name: string; description: string }): Promise<Skill> => {
+    const response = await apiClient.post<Skill>('/api/umamusume/skill/create/', data);
+    return response.data;
+};
+
+export const adminAssignSkillToUma = async (skillId: number, umaId: number): Promise<Skill> => {
+    const response = await apiClient.post<Skill>('/api/umamusume/skill/assign/', {
+        skill_id: skillId,
+        uma_id: umaId,
+    });
+    return response.data;
+};
+
+export const adminUpdateUma = async (id: number, data: Partial<BaseUmaCreateData>): Promise<BaseUma> => {
+    const response = await apiClient.patch<BaseUma>(`/api/umamusume/uma/${id}/update/`, data);
+    return response.data;
+};
+
+export const adminUnassignSkill = async (skillId: number): Promise<void> => {
+    await apiClient.post(`/api/umamusume/skill/${skillId}/unassign/`);
+};
+
+export const adminGetAllUmas = async (): Promise<BaseUma[]> => {
+    const response = await apiClient.get<BaseUma[]>('/api/umamusume/uma/admin-list/');
+    return response.data;
+};
+
+export const adminToggleUmaActive = async (id: number): Promise<BaseUma> => {
+    const response = await apiClient.post<BaseUma>(`/api/umamusume/uma/${id}/toggle/`);
     return response.data;
 };

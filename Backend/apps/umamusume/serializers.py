@@ -1,17 +1,57 @@
+import re
 from rest_framework import serializers
-from .models import Umas, Skill, Umamusume, Aptitude
+from .models import Aptitude, Skill, Umamusume, Umas
 
-class UmaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Umas
-        fields = ['id', 'name', 'avatar_url']
-        read_only_fields = ['id']
+_HTML_PATTERN = re.compile(r'<[^>]+>')
+_XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
+_VALID_URL_SCHEMES = ('http://', 'https://')
 
 class SkillSerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill
         fields = ['id', 'name', 'description']
         read_only_fields = ['id']
+
+
+class UmaSerializer(serializers.ModelSerializer):
+    skills = SkillSerializer(source='unique_skill', many=True, read_only=True)
+
+    class Meta:
+        model = Umas
+        fields = ['id', 'name', 'avatar_url', 'is_active', 'skills']
+        read_only_fields = ['id']
+
+
+class UmaCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Umas
+        fields = ['name', 'avatar_url']
+        extra_kwargs = {
+            'avatar_url': {'required': False, 'allow_blank': True},
+        }
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be empty.")
+        if len(value) > 100:
+            raise serializers.ValidationError("Name cannot exceed 100 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Name must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Name contains invalid content.")
+        if Umas.objects.filter(name__iexact=value).exists():
+            raise serializers.ValidationError("An Uma with this name already exists.")
+        return value
+
+    def validate_avatar_url(self, value):
+        if not value:
+            return value
+        if not value.startswith(_VALID_URL_SCHEMES):
+            raise serializers.ValidationError("Avatar URL must use http or https.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Avatar URL contains invalid content.")
+        return value
 
 class AptitudeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -100,3 +140,66 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
             instance.skills.set(skill_ids)
 
         return instance
+
+
+class UmaUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Umas
+        fields = ['name', 'avatar_url']
+        extra_kwargs = {
+            'name': {'required': False},
+            'avatar_url': {'required': False, 'allow_blank': True},
+        }
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be empty.")
+        if len(value) > 100:
+            raise serializers.ValidationError("Name cannot exceed 100 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Name must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Name contains invalid content.")
+        if Umas.objects.filter(name__iexact=value).exclude(id=self.instance.id).exists():
+            raise serializers.ValidationError("An Uma with this name already exists.")
+        return value
+
+    def validate_avatar_url(self, value):
+        if not value:
+            return value
+        if not value.startswith(_VALID_URL_SCHEMES):
+            raise serializers.ValidationError("Avatar URL must use http or https.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Avatar URL contains invalid content.")
+        return value
+
+
+class SkillCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = ['name', 'description']
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be empty.")
+        if len(value) > 100:
+            raise serializers.ValidationError("Name cannot exceed 100 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Name must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Name contains invalid content.")
+        return value
+
+    def validate_description(self, value):
+        if not value:
+            return value
+        value = value.strip()
+        if len(value) > 500:
+            raise serializers.ValidationError("Description cannot exceed 500 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Description must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Description contains invalid content.")
+        return value

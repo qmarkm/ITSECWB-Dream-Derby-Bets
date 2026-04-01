@@ -1,224 +1,430 @@
+import csv
+import io
+import json
+import os
+import time
+
+from django.conf import settings
+from django.core.files.storage import default_storage
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.core.files.storage import default_storage
-from django.conf import settings
-import os
-from .models import Skill, Umamusume, Aptitude, Umas
-from .serializers import UmaSerializer, SkillSerializer, AptitudeSerializer, UmamusumeSerializer, UmamusumeCreateSerializer, AptitudeUpdateSerializer
+from rest_framework.response import Response
+
+from .models import Skill, Umas, Umamusume
+from .serializers import (
+    SkillCreateSerializer,
+    SkillSerializer,
+    UmaCreateSerializer,
+    UmaUpdateSerializer,
+    UmamusumeCreateSerializer,
+    UmamusumeSerializer,
+    UmaSerializer,
+)
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def index(request):
-    # List all umamusumes
-    # GET /api/umamusume
+    try:
+        umamusume = Umamusume.objects.all()
+        serializer = UmamusumeSerializer(umamusume, many=True)
+        return Response(serializer.data)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
 
-    umamusume = Umamusume.objects.all()
-    serializer = UmamusumeSerializer(umamusume, many=True)
-    return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def view_umamusume(request, id):
-    # Get a specific Umamusume by id
-    # GET /api/umamusume/uma/<id>
-
     try:
         umamusume = Umamusume.objects.get(id=id)
         serializer = UmamusumeSerializer(umamusume)
         return Response(serializer.data)
     except Umamusume.DoesNotExist:
-        return Response(
-            {'error': 'Uma not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({'error': 'Umamusume not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_my_umas(request):
-    umamusume = Umamusume.objects.filter(user=request.user)
-    serializer = UmamusumeSerializer(umamusume, many=True)
-    return Response(serializer.data)
+    try:
+        umamusume = Umamusume.objects.filter(user=request.user)
+        serializer = UmamusumeSerializer(umamusume, many=True)
+        return Response(serializer.data)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_skills(request):
-    skills = Skill.objects.all()
-    serializer = SkillSerializer(skills, many=True)
-    return Response(serializer.data)
+    try:
+        skills = Skill.objects.all()
+        serializer = SkillSerializer(skills, many=True)
+        return Response(serializer.data)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_umas(request):
-    umas = Umas.objects.all()
-    serializer = UmaSerializer(umas, many=True)
-    return Response(serializer.data)
+    try:
+        umas = Umas.objects.filter(is_active=True)
+        serializer = UmaSerializer(umas, many=True)
+        return Response(serializer.data)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_get_umas(request):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+        umas = Umas.objects.all()
+        serializer = UmaSerializer(umas, many=True)
+        return Response(serializer.data)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def toggle_uma_active(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+        uma = Umas.objects.get(id=id)
+        uma.is_active = not uma.is_active
+        uma.save()
+        return Response(UmaSerializer(uma).data)
+    except Umas.DoesNotExist:
+        return Response({'error': 'Uma not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_uma(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        uma = Umas.objects.get(id=id)
+        serializer = UmaUpdateSerializer(uma, data=request.data, partial=True)
+        if serializer.is_valid():
+            uma = serializer.save()
+            return Response(UmaSerializer(uma).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Umas.DoesNotExist:
+        return Response({'error': 'Uma not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def unassign_skill(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        skill = Skill.objects.get(id=id)
+        skill.uma = None
+        skill.save()
+        return Response(SkillSerializer(skill).data)
+
+    except Skill.DoesNotExist:
+        return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_skill(request):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = SkillCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            skill = serializer.save()
+            return Response(SkillSerializer(skill).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def assign_skill_to_uma(request):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        skill_id = request.data.get('skill_id')
+        uma_id = request.data.get('uma_id')
+
+        if not skill_id or not uma_id:
+            return Response({'error': 'skill_id and uma_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        skill = Skill.objects.get(id=skill_id)
+        uma = Umas.objects.get(id=uma_id)
+        skill.uma = uma
+        skill.save()
+        return Response(SkillSerializer(skill).data)
+
+    except Skill.DoesNotExist:
+        return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Umas.DoesNotExist:
+        return Response({'error': 'Uma not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_uma(request):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UmaCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            uma = serializer.save()
+            return Response(UmaSerializer(uma).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_umas_csv(request):
+    csv_file = None
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        if 'file' not in request.FILES:
+            return Response({'error': 'No file provided. Include a "file" field.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        csv_file = request.FILES['file']
+
+        if not csv_file.name.lower().endswith('.csv'):
+            return Response({'error': 'File must be a .csv file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        MAX_SIZE = 50 * 1024
+        if csv_file.size > MAX_SIZE:
+            return Response({'error': 'File too large. Maximum size is 50KB.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            raw_bytes = csv_file.read()
+            content = raw_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            return Response({'error': 'File must be UTF-8 encoded.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        reader = csv.DictReader(io.StringIO(content))
+
+        if reader.fieldnames is None or 'name' not in reader.fieldnames:
+            return Response({'error': 'CSV must have a "name" column.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_count = 0
+        skipped_count = 0
+        errors = []
+
+        for row_number, row in enumerate(reader, start=2):
+            try:
+                data = {
+                    'name': row.get('name', ''),
+                    'avatar_url': row.get('avatar_url', ''),
+                }
+
+                if Umas.objects.filter(name__iexact=data['name'].strip()).exists():
+                    skipped_count += 1
+                    continue
+
+                serializer = UmaCreateSerializer(data=data)
+                if not serializer.is_valid():
+                    first_error = next(iter(serializer.errors.values()))[0]
+                    errors.append({
+                        'row': row_number,
+                        'name': data['name'],
+                        'reason': str(first_error),
+                    })
+                    continue
+
+                uma = serializer.save()
+                created_count += 1
+
+                skill_name = row.get('skill_name', '').strip()
+                skill_description = row.get('skill_description', '').strip()
+                if skill_name:
+                    skill_serializer = SkillCreateSerializer(data={
+                        'name': skill_name,
+                        'description': skill_description or '',
+                    })
+                    if skill_serializer.is_valid():
+                        skill = skill_serializer.save()
+                        skill.uma = uma
+                        skill.save()
+
+            except Exception:
+                errors.append({
+                    'row': row_number,
+                    'name': row.get('name', '(unknown)'),
+                    'reason': 'Unexpected error processing row.',
+                })
+                continue
+
+        return Response({
+            'created': created_count,
+            'skipped': skipped_count,
+            'error_count': len(errors),
+            'errors': errors,
+        }, status=status.HTTP_200_OK)
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if csv_file:
+            csv_file.close()
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_umamusume(request):
-    # Create a new umamusume linked to a user
-    # POST /api/umamusume/create/
+    avatar_file = None
+    try:
+        avatar_file = request.FILES.get('avatar')
+        avatar_url = None
 
-    """
-    Expected JSON body:
-    {
-        "name": "string",
-        "avatar_url": "string (optional)",
-        "base_uma_id": "integer (optional)",
-        "speed": "integer",
-        "stamina": "integer",
-        "power": "integer",
-        "guts": "integer",
-        "wit": "integer",
-        "skill_ids": [1, 2, 3],  // optional array of skill IDs
-        "aptitudes": {  // optional aptitude object
-            "turf": "A", "dirt": "A",
-            "short": "A", "mile": "A", "medium": "A", "long": "A",
-            "front": "A", "pace": "A", "late": "A", "end": "A"
-        }
-    }
-    """
+        if avatar_file:
+            allowed_extensions = ['.png', '.gif']
+            file_extension = os.path.splitext(avatar_file.name)[1].lower()
 
-    avatar_file = request.FILES.get('avatar')
-    avatar_url = None
+            if file_extension not in allowed_extensions:
+                return Response({'error': 'Invalid file type. Only PNG and GIF allowed.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if avatar_file:
-        # Validate file type (PNG/GIF only)
-        allowed_extensions = ['.png', '.gif']
-        file_extension = os.path.splitext(avatar_file.name)[1].lower()
+            max_size = 5 * 1024 * 1024
+            if avatar_file.size > max_size:
+                return Response({'error': 'File too large. Maximum size is 5MB.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if file_extension not in allowed_extensions:
-            return Response(
-                {'error': f'Invalid file type. Only PNG and GIF allowed.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            timestamp = int(time.time())
+            filename = f"uma_{request.user.id}_{timestamp}{file_extension}"
+            filepath = os.path.join('umamusume_avatars', filename)
+            saved_path = default_storage.save(filepath, avatar_file)
+            avatar_url = request.build_absolute_uri(f"{settings.MEDIA_URL}{saved_path}")
 
-        # Validate file size (5MB max)
-        max_size = 5 * 1024 * 1024  # 5MB in bytes
-        if avatar_file.size > max_size:
-            return Response(
-                {'error': 'File too large. Maximum size is 5MB.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        data = {}
+        for key in request.POST.keys():
+            if key not in ['skill_ids', 'aptitudes']:
+                data[key] = request.POST.get(key)
 
-        # Create unique filename with timestamp
-        import time
-        timestamp = int(time.time())
-        filename = f"uma_{request.user.id}_{timestamp}{file_extension}"
-        filepath = os.path.join('umamusume_avatars', filename)
+        if avatar_url:
+            data['avatar_url'] = avatar_url
 
-        # Save the file to storage
-        saved_path = default_storage.save(filepath, avatar_file)
-
-        # Generate the full URL for the saved file
-        # Build absolute URL: http://127.0.0.1:8000/media/...
-        avatar_url = request.build_absolute_uri(f"{settings.MEDIA_URL}{saved_path}")
-
-    # STEP 2: Prepare data for serializer - build clean dict
-    data = {}
-
-    # Copy simple fields from POST
-    for key in request.POST.keys():
-        if key not in ['skill_ids', 'aptitudes']:  # Handle these separately
-            data[key] = request.POST.get(key)
-
-    # Add the avatar URL if file was uploaded
-    if avatar_url:
-        data['avatar_url'] = avatar_url
-
-    # STEP 3: Parse skill_ids (from FormData)
-    print("DEBUG: request.POST keys:", request.POST.keys())
-
-    if 'skill_ids' in request.POST:
-        skill_ids_raw = request.POST.getlist('skill_ids')
-        print("DEBUG: skill_ids_raw from getlist:", skill_ids_raw)
-        if skill_ids_raw:
+        if 'skill_ids' in request.POST:
+            skill_ids_raw = request.POST.getlist('skill_ids')
             try:
-                data['skill_ids'] = [int(id) for id in skill_ids_raw if id and id.strip()]
-                print("DEBUG: Parsed skill_ids:", data['skill_ids'])
-            except (ValueError, TypeError) as e:
-                print("DEBUG: Error parsing skill_ids:", e)
+                data['skill_ids'] = [int(i) for i in skill_ids_raw if i and i.strip()]
+            except (ValueError, TypeError):
                 data['skill_ids'] = []
         else:
             data['skill_ids'] = []
-    else:
-        data['skill_ids'] = []
 
-    print("DEBUG: Final skill_ids value:", data.get('skill_ids'))
+        if 'aptitudes' in request.POST:
+            aptitudes_str = request.POST.get('aptitudes')
+            if aptitudes_str:
+                try:
+                    data['aptitudes'] = json.loads(aptitudes_str)
+                except json.JSONDecodeError:
+                    return Response({'error': 'Invalid aptitudes format.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # STEP 4: Parse aptitudes if it's a JSON string (from FormData)
-    if 'aptitudes' in request.POST:
-        aptitudes_str = request.POST.get('aptitudes')
-        if aptitudes_str:
-            import json
-            try:
-                data['aptitudes'] = json.loads(aptitudes_str)
-                print("DEBUG: Parsed aptitudes:", data['aptitudes'])
-            except json.JSONDecodeError as e:
-                print("DEBUG: Error parsing aptitudes:", e)
-                return Response(
-                    {'error': 'Invalid aptitudes JSON format'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        serializer = UmamusumeCreateSerializer(data=data)
+        if serializer.is_valid():
+            umamusume = serializer.save(user=request.user)
+            return Response(UmamusumeSerializer(umamusume).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # STEP 4: Use serializer to validate and save
-    serializer = UmamusumeCreateSerializer(data=data)
-    if serializer.is_valid():
-        umamusume = serializer.save(user=request.user)
-        umamusume_data = UmamusumeSerializer(umamusume).data
-        return Response(umamusume_data, status=status.HTTP_201_CREATED)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
 
 
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def update_umamusume(request, id):
-    # Update an existing umamusume linked to a user
-    # PATCH /api/umamusume/update/
-
     try:
         umamusume = Umamusume.objects.get(id=id)
+
+        if umamusume.user != request.user:
+            return Response({'error': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UmamusumeCreateSerializer(umamusume, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(UmamusumeSerializer(umamusume).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     except Umamusume.DoesNotExist:
-        return Response(
-            {'error': 'Uma not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({'error': 'Umamusume not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
 
-    if umamusume.user != request.user:
-        return Response(
-            {'error': 'You do not have permission to update this Uma'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    serializer = UmamusumeCreateSerializer(umamusume, data=request.data, partial=True)
-    if serializer.is_valid():
-        serializer.save()
-        uma_serializer = UmamusumeSerializer(umamusume)
-        return Response(uma_serializer.data)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_umamusume(request, id):
     try:
         umamusume = Umamusume.objects.get(id=id)
-    except Umamusume.DoesNotExist:
-        return Response(
-            {'error': 'Uma not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
 
-    if umamusume.user != request.user:
-        return Response(
-            {'error': 'You do not have permission to update this Uma'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
-    umamusume.delete()
-    return Response(
-        {'message': 'Uma deleted succesfully'},
-        status=status.HTTP_204_NO_CONTENT
-    )
+        if umamusume.user != request.user:
+            return Response({'error': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        umamusume.delete()
+        return Response({'message': 'Umamusume deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
+
+    except Umamusume.DoesNotExist:
+        return Response({'error': 'Umamusume not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
