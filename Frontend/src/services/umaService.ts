@@ -24,7 +24,8 @@ export interface Uma {
     id: number;
     name: string;
     avatar_url: string | null;
-    user: number; // Django usually returns the User ID here
+    user: number;
+    user_username?: string;
     
     // Stats
     speed: number;

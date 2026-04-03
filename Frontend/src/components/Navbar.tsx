@@ -312,6 +312,14 @@ export const Navbar: React.FC = () => {
             <SearchDropdown />
           </div>
 
+          <Link
+            to="/ranking"
+            className="hidden md:flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-accent/30"
+          >
+            <Trophy className="h-4 w-4" />
+            Ranking
+          </Link>
+
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center gap-4">
             <Button
@@ -405,6 +413,15 @@ export const Navbar: React.FC = () => {
               </form>
               <SearchDropdown />
             </div>
+
+            <Link
+              to="/ranking"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/50 text-sm font-medium hover:bg-secondary transition-colors"
+            >
+              <Trophy className="h-4 w-4 text-primary" />
+              Ranking
+            </Link>
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/20">

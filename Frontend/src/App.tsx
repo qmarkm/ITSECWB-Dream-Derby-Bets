@@ -15,6 +15,7 @@ import CreateUmamusume from "./pages/CreateUmamusume";
 import EditUmamusume from "./pages/EditUmamusume";
 import ViewUmamusume from "./pages/ViewUmamusume";
 import Umas from "./pages/Umas";
+import Ranking from "./pages/Ranking";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,6 +39,7 @@ const App = () => (
               <Route path="/umamusume/:id" element={<ViewUmamusume />} />
               <Route path="/umamusume/:id/edit" element={<EditUmamusume />} />
               <Route path="/umas" element={<Umas />} />
+              <Route path="/ranking" element={<Ranking />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

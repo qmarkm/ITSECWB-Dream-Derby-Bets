@@ -85,6 +85,12 @@ const Home: React.FC = () => {
                 Browse Umas
               </Link>
             </Button>
+            <Button variant="outline" size="lg" asChild>
+              <Link to="/umamusume/create">
+                <Plus className="h-5 w-5 mr-2" />
+                Add Umamusume
+              </Link>
+            </Button>
           </div>
         </section>
 
