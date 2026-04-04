@@ -13,8 +13,10 @@ from rest_framework.response import Response
 
 from .models import Skill, Umas, Umamusume
 from .serializers import (
+    SkillAdminSerializer,
     SkillCreateSerializer,
     SkillSerializer,
+    SkillUpdateSerializer,
     UmaCreateSerializer,
     UmaUpdateSerializer,
     UmamusumeCreateSerializer,
@@ -165,6 +167,64 @@ def unassign_skill(request, id):
         pass
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_get_skills(request):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        skills = Skill.objects.select_related('uma').all().order_by('uma__name', 'name')
+        serializer = SkillAdminSerializer(skills, many=True)
+        return Response(serializer.data)
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_skill(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        skill = Skill.objects.get(id=id)
+        serializer = SkillUpdateSerializer(skill, data=request.data, partial=True)
+        if serializer.is_valid():
+            skill = serializer.save()
+            return Response(SkillAdminSerializer(skill).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Skill.DoesNotExist:
+        return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_skill(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        skill = Skill.objects.get(id=id)
+        skill.delete()
+        return Response({'message': 'Skill deleted successfully.'}, status=status.HTTP_200_OK)
+
+    except Skill.DoesNotExist:
+        return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_skill(request):
@@ -196,6 +256,20 @@ def assign_skill_to_uma(request):
 
         if not skill_id or not uma_id:
             return Response({'error': 'skill_id and uma_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            skill_id = int(skill_id)
+            if skill_id <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return Response({'error': 'skill_id must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            uma_id = int(uma_id)
+            if uma_id <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return Response({'error': 'uma_id must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
 
         skill = Skill.objects.get(id=skill_id)
         uma = Umas.objects.get(id=uma_id)
@@ -424,6 +498,34 @@ def delete_umamusume(request, id):
 
     except Umamusume.DoesNotExist:
         return Response({'error': 'Umamusume not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_uma(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            uma = Umas.objects.get(id=id)
+        except Umas.DoesNotExist:
+            return Response({'error': 'Uma not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        umamusume_count = Umamusume.objects.filter(uma=uma).count()
+        if umamusume_count > 0:
+            return Response(
+                {'error': f'Cannot delete: {umamusume_count} Umamusume record(s) are based on this Uma. Disable it instead.'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        uma.delete()
+        return Response({'message': 'Uma deleted successfully.'}, status=status.HTTP_200_OK)
+
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     finally:

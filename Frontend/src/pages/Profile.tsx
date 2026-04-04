@@ -46,8 +46,9 @@ const Profile: React.FC = () => {
       toast.error("Username cannot be empty");
       return;
     }
-    if (!editedEmail.trim() || !editedEmail.includes("@")) {
-      toast.error("Please enter a valid email");
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!editedEmail.trim() || !EMAIL_REGEX.test(editedEmail.trim())) {
+      toast.error("Please enter a valid email address");
       return;
     }
 

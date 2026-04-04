@@ -66,7 +66,12 @@ def create_race_event(request):
     Placeholder — will be implemented by the admin task owner.
     POST /api/events/create/
     """
-    return Response()
+    try:
+        return Response({'detail': 'Not implemented.'}, status=status.HTTP_501_NOT_IMPLEMENTED)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
 
 
 @api_view(['POST'])
@@ -98,13 +103,25 @@ def my_bids(request):
     try:
         bids = Bids.objects.filter(bidder=request.user).select_related('race_event', 'uma')
 
+        valid_statuses = [s.value for s in RaceEvent.Status]
         event_status = request.query_params.get('status')
         if event_status:
+            if event_status not in valid_statuses:
+                return Response(
+                    {'error': f'Invalid status. Valid values: {valid_statuses}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             bids = bids.filter(race_event__status=event_status)
 
         race_id = request.query_params.get('race_id')
         if race_id:
-            bids = bids.filter(race_event__id=race_id)
+            try:
+                race_id_int = int(race_id)
+                if race_id_int <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return Response({'error': 'race_id must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
+            bids = bids.filter(race_event__id=race_id_int)
 
         bids = bids.order_by('-created_at')
         serializer = BidsSerializer(bids, many=True)

@@ -213,6 +213,34 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
             'is_superuser',
         ]
 
+    def validate_username(self, value):
+        if not re.match(r'^[a-zA-Z0-9_]+$', value):
+            raise serializers.ValidationError("Username can only contain letters, numbers, and underscores.")
+        if len(value) < 3:
+            raise serializers.ValidationError("Username must be at least 3 characters.")
+        if len(value) > 30:
+            raise serializers.ValidationError("Username must be at most 30 characters.")
+        user = self.instance
+        if User.objects.exclude(pk=user.pk).filter(username=value).exists():
+            raise serializers.ValidationError("This username is already taken.")
+        return value
+
+    def validate_email(self, value):
+        user = self.instance
+        if User.objects.exclude(pk=user.pk).filter(email=value).exists():
+            raise serializers.ValidationError("This email is already in use.")
+        return value
+
+    def validate_full_name(self, value):
+        if value and not re.match(r'^[a-zA-Z\s\-\.\']+$', value):
+            raise serializers.ValidationError("Full name can only contain letters, spaces, hyphens, dots, and apostrophes.")
+        return value.strip() if value else value
+
+    def validate_phone_number(self, value):
+        if value and not re.match(r'^\+?[0-9\s\-\(\)]{7,20}$', value):
+            raise serializers.ValidationError("Enter a valid phone number.")
+        return value
+
 
 class LoginAttemptsSerializer(serializers.ModelSerializer):
 

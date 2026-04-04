@@ -144,7 +144,7 @@ export const deleteUma = async (id: number): Promise<void> => {
 };
 
 export const updateUma = async (id: number, data: Partial<NewUmaProfile>): Promise<Uma> => {
-    const response = await apiClient.patch<Uma>(`/api/umamusume/update/${id}`, data);
+    const response = await apiClient.patch<Uma>(`/api/umamusume/update/${id}/`, data);
     return response.data;
 };
 
@@ -210,4 +210,30 @@ export const adminGetAllUmas = async (): Promise<BaseUma[]> => {
 export const adminToggleUmaActive = async (id: number): Promise<BaseUma> => {
     const response = await apiClient.post<BaseUma>(`/api/umamusume/uma/${id}/toggle/`);
     return response.data;
+};
+
+export const adminDeleteUma = async (id: number): Promise<void> => {
+    await apiClient.delete(`/api/umamusume/uma/${id}/delete/`);
+};
+
+export interface SkillAdmin {
+    id: number;
+    name: string;
+    description: string;
+    uma_id: number | null;
+    uma_name: string | null;
+}
+
+export const adminGetAllSkills = async (): Promise<SkillAdmin[]> => {
+    const response = await apiClient.get<SkillAdmin[]>('/api/umamusume/skill/admin-list/');
+    return response.data;
+};
+
+export const adminUpdateSkill = async (id: number, data: { name?: string; description?: string }): Promise<SkillAdmin> => {
+    const response = await apiClient.patch<SkillAdmin>(`/api/umamusume/skill/${id}/update/`, data);
+    return response.data;
+};
+
+export const adminDeleteSkill = async (id: number): Promise<void> => {
+    await apiClient.delete(`/api/umamusume/skill/${id}/delete/`);
 };

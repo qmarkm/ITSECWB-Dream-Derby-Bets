@@ -103,8 +103,7 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
         queryset=Umas.objects.all(),
         source='uma',
         write_only=True,
-        required=False,
-        allow_null=True
+        required=True
     )
     aptitudes = AptitudeUpdateSerializer(required=False)
 
@@ -115,6 +114,27 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
             'speed', 'stamina', 'power', 'guts', 'wit',
             'skill_ids', 'aptitudes'
         ]
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be empty.")
+        if len(value) > 100:
+            raise serializers.ValidationError("Name cannot exceed 100 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Name must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Name contains invalid content.")
+        return value
+
+    def validate_avatar_url(self, value):
+        if not value:
+            return value
+        if not value.startswith(_VALID_URL_SCHEMES):
+            raise serializers.ValidationError("Avatar URL must use http or https.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Avatar URL contains invalid content.")
+        return value
 
     def create(self, validated_data):
         skill_ids = validated_data.pop('skill_ids', [])
@@ -131,6 +151,7 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         skill_ids = validated_data.pop('skill_ids', None)
+        aptitudes_data = validated_data.pop('aptitudes', None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -138,6 +159,9 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
 
         if skill_ids is not None:
             instance.skills.set(skill_ids)
+
+        if aptitudes_data is not None:
+            Aptitude.objects.filter(umamusume=instance).update(**aptitudes_data)
 
         return instance
 
@@ -172,6 +196,49 @@ class UmaUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Avatar URL must use http or https.")
         if _XSS_PATTERN.search(value):
             raise serializers.ValidationError("Avatar URL contains invalid content.")
+        return value
+
+
+class SkillAdminSerializer(serializers.ModelSerializer):
+    uma_id = serializers.IntegerField(source='uma.id', read_only=True, allow_null=True)
+    uma_name = serializers.CharField(source='uma.name', read_only=True, allow_null=True)
+
+    class Meta:
+        model = Skill
+        fields = ['id', 'name', 'description', 'uma_id', 'uma_name']
+
+
+class SkillUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = ['name', 'description']
+        extra_kwargs = {
+            'name': {'required': False},
+            'description': {'required': False, 'allow_blank': True},
+        }
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be empty.")
+        if len(value) > 100:
+            raise serializers.ValidationError("Name cannot exceed 100 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Name must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Name contains invalid content.")
+        return value
+
+    def validate_description(self, value):
+        if not value:
+            return value
+        value = value.strip()
+        if len(value) > 500:
+            raise serializers.ValidationError("Description cannot exceed 500 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Description must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Description contains invalid content.")
         return value
 
 

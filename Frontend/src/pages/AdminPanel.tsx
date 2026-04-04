@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import * as authService from "@/services/authService";
 import type { User as BackendUser } from "@/services/authService";
 import * as umaService from "@/services/umaService";
-import type { BaseUma, CsvImportResult, Skill } from "@/services/umaService";
+import type { BaseUma, CsvImportResult, Skill, SkillAdmin } from "@/services/umaService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,7 +64,17 @@ const AdminPanel: React.FC = () => {
   const [isLoadingUmas, setIsLoadingUmas] = useState(false);
 
   // Uma list view
-  const [umaTab, setUmaTab] = useState<"setup" | "list">("setup");
+  const [umaTab, setUmaTab] = useState<"setup" | "list" | "skills">("setup");
+
+  // Skills tab
+  const [managedSkills, setManagedSkills] = useState<SkillAdmin[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillTabSearch, setSkillTabSearch] = useState("");
+  const [editingSkill, setEditingSkill] = useState<SkillAdmin | null>(null);
+  const [editSkillName, setEditSkillName] = useState("");
+  const [editSkillDescription, setEditSkillDescription] = useState("");
+  const [isSavingSkill, setIsSavingSkill] = useState(false);
+  const [skillDeleteConfirmId, setSkillDeleteConfirmId] = useState<number | null>(null);
   const [umaListSearch, setUmaListSearch] = useState("");
   const [umaListFilter, setUmaListFilter] = useState<"all" | "active" | "disabled" | "has_skills" | "no_skills">("all");
   const [viewingUma, setViewingUma] = useState<BaseUma | null>(null);
@@ -74,6 +84,7 @@ const AdminPanel: React.FC = () => {
   const [editName, setEditName] = useState("");
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [isUpdatingUma, setIsUpdatingUma] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const [newUser, setNewUser] = useState({
     username: "",
@@ -85,6 +96,15 @@ const AdminPanel: React.FC = () => {
   });
 
   const isAdmin = user?.isStaff && user?.isSuperuser;
+
+  // Validation patterns — mirror backend regex rules exactly
+  const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/;
+  const FULL_NAME_REGEX = /^[a-zA-Z\s\-\.']+$/;
+  const PHONE_REGEX = /^\+?[0-9\s\-\(\)]{7,20}$/;
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const URL_REGEX = /^https?:\/\/.+/;
+  const HTML_PATTERN = /<[^>]+>/;
+  const XSS_PATTERN = /(javascript\s*:|on\w+\s*=|<script)/i;
 
   const filteredUmas = allUmas
     .filter((u) => u.name.toLowerCase().includes(umaListSearch.toLowerCase()))
@@ -147,6 +167,14 @@ const AdminPanel: React.FC = () => {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!USERNAME_REGEX.test(newUser.username)) { toast.error("Username can only contain letters, numbers, and underscores"); return; }
+    if (newUser.username.length < 3 || newUser.username.length > 30) { toast.error("Username must be between 3 and 30 characters"); return; }
+    if (!EMAIL_REGEX.test(newUser.email)) { toast.error("Please enter a valid email address"); return; }
+    if (newUser.full_name && !FULL_NAME_REGEX.test(newUser.full_name)) { toast.error("Full name can only contain letters, spaces, hyphens, dots, and apostrophes"); return; }
+    if (newUser.phone_number && !PHONE_REGEX.test(newUser.phone_number)) { toast.error("Please enter a valid phone number"); return; }
+    if (newUser.password.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    if (/^\d+$/.test(newUser.password)) { toast.error("Password cannot be entirely numeric"); return; }
+    if (newUser.password !== newUser.password_confirm) { toast.error("Passwords do not match"); return; }
     setIsCreatingUser(true);
     try {
       await authService.adminCreateUser(newUser);
@@ -212,6 +240,11 @@ const AdminPanel: React.FC = () => {
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
+    if (!USERNAME_REGEX.test(editForm.username)) { toast.error("Username can only contain letters, numbers, and underscores"); return; }
+    if (editForm.username.length < 3 || editForm.username.length > 30) { toast.error("Username must be between 3 and 30 characters"); return; }
+    if (!EMAIL_REGEX.test(editForm.email)) { toast.error("Please enter a valid email address"); return; }
+    if (editForm.full_name && !FULL_NAME_REGEX.test(editForm.full_name)) { toast.error("Full name can only contain letters, spaces, hyphens, dots, and apostrophes"); return; }
+    if (editForm.phone_number && !PHONE_REGEX.test(editForm.phone_number)) { toast.error("Please enter a valid phone number"); return; }
 
     try {
       const updated = await authService.adminUpdateUser(editingUser.id, editForm);
@@ -232,10 +265,19 @@ const AdminPanel: React.FC = () => {
 
   const handleCreateUma = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedUmaName = newUmaName.trim();
+    if (!trimmedUmaName) { toast.error("Uma name cannot be empty"); return; }
+    if (trimmedUmaName.length > 100) { toast.error("Uma name cannot exceed 100 characters"); return; }
+    if (HTML_PATTERN.test(trimmedUmaName)) { toast.error("Uma name must not contain HTML tags"); return; }
+    if (XSS_PATTERN.test(trimmedUmaName)) { toast.error("Uma name contains invalid content"); return; }
+    if (newUmaAvatarUrl) {
+      if (!URL_REGEX.test(newUmaAvatarUrl)) { toast.error("Avatar URL must start with http:// or https://"); return; }
+      if (XSS_PATTERN.test(newUmaAvatarUrl)) { toast.error("Avatar URL contains invalid content"); return; }
+    }
     setIsCreatingUma(true);
     try {
       const uma = await umaService.adminCreateBaseUma({
-        name: newUmaName,
+        name: trimmedUmaName,
         avatar_url: newUmaAvatarUrl || undefined,
       });
       setAllUmas((prev) => [...prev, uma]);
@@ -284,15 +326,88 @@ const AdminPanel: React.FC = () => {
     setEditingUma(uma);
     setEditName(uma.name);
     setEditAvatarUrl(uma.avatar_url || "");
+    setDeleteConfirmId(null);
+  };
+
+  const handleDeleteUma = async (uma: BaseUma) => {
+    try {
+      await umaService.adminDeleteUma(uma.id);
+      setAllUmas((prev) => prev.filter((u) => u.id !== uma.id));
+      setEditingUma(null);
+      toast.success(`${uma.name} deleted.`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Failed to delete Uma.';
+      toast.error(msg);
+    }
+  };
+
+  const loadAllSkills = async () => {
+    setSkillsLoading(true);
+    try {
+      const data = await umaService.adminGetAllSkills();
+      setManagedSkills(data);
+    } catch {
+      toast.error('Failed to load skills.');
+    } finally {
+      setSkillsLoading(false);
+    }
+  };
+
+  const openEditSkillDialog = (skill: SkillAdmin) => {
+    setEditingSkill(skill);
+    setEditSkillName(skill.name);
+    setEditSkillDescription(skill.description);
+    setSkillDeleteConfirmId(null);
+  };
+
+  const handleUpdateSkill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSkill) return;
+    const trimmedName = editSkillName.trim();
+    if (!trimmedName) { toast.error('Skill name cannot be empty.'); return; }
+    setIsSavingSkill(true);
+    try {
+      const updated = await umaService.adminUpdateSkill(editingSkill.id, {
+        name: trimmedName,
+        description: editSkillDescription.trim(),
+      });
+      setManagedSkills((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      setEditingSkill(null);
+      toast.success('Skill updated.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to update skill.');
+    } finally {
+      setIsSavingSkill(false);
+    }
+  };
+
+  const handleDeleteSkill = async (skill: SkillAdmin) => {
+    try {
+      await umaService.adminDeleteSkill(skill.id);
+      setManagedSkills((prev) => prev.filter((s) => s.id !== skill.id));
+      setEditingSkill(null);
+      toast.success(`"${skill.name}" deleted.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to delete skill.');
+    }
   };
 
   const handleUpdateUma = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUma) return;
+    const trimmedEditName = editName.trim();
+    if (!trimmedEditName) { toast.error("Uma name cannot be empty"); return; }
+    if (trimmedEditName.length > 100) { toast.error("Uma name cannot exceed 100 characters"); return; }
+    if (HTML_PATTERN.test(trimmedEditName)) { toast.error("Uma name must not contain HTML tags"); return; }
+    if (XSS_PATTERN.test(trimmedEditName)) { toast.error("Uma name contains invalid content"); return; }
+    if (editAvatarUrl) {
+      if (!URL_REGEX.test(editAvatarUrl)) { toast.error("Avatar URL must start with http:// or https://"); return; }
+      if (XSS_PATTERN.test(editAvatarUrl)) { toast.error("Avatar URL contains invalid content"); return; }
+    }
     setIsUpdatingUma(true);
     try {
       const updated = await umaService.adminUpdateUma(editingUma.id, {
-        name: editName,
+        name: trimmedEditName,
         avatar_url: editAvatarUrl || undefined,
       });
       setAllUmas((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
@@ -339,11 +454,20 @@ const AdminPanel: React.FC = () => {
 
   const handleCreateSkill = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedSkillName = newSkillName.trim();
+    const trimmedSkillDesc = newSkillDescription.trim();
+    if (!trimmedSkillName) { toast.error("Skill name cannot be empty"); return; }
+    if (trimmedSkillName.length > 100) { toast.error("Skill name cannot exceed 100 characters"); return; }
+    if (HTML_PATTERN.test(trimmedSkillName)) { toast.error("Skill name must not contain HTML tags"); return; }
+    if (XSS_PATTERN.test(trimmedSkillName)) { toast.error("Skill name contains invalid content"); return; }
+    if (trimmedSkillDesc.length > 500) { toast.error("Skill description cannot exceed 500 characters"); return; }
+    if (HTML_PATTERN.test(trimmedSkillDesc)) { toast.error("Skill description must not contain HTML tags"); return; }
+    if (XSS_PATTERN.test(trimmedSkillDesc)) { toast.error("Skill description contains invalid content"); return; }
     setIsCreatingSkill(true);
     try {
       const skill = await umaService.adminCreateSkill({
-        name: newSkillName,
-        description: newSkillDescription,
+        name: trimmedSkillName,
+        description: trimmedSkillDesc,
       });
       toast.success("Skill created.");
       setAllSkills((prev) => [...prev, skill]);
@@ -789,6 +913,17 @@ const AdminPanel: React.FC = () => {
                     </span>
                   )}
                 </button>
+                <button
+                  className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${umaTab === "skills" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => { setUmaTab("skills"); loadAllSkills(); }}
+                >
+                  Skills
+                  {managedSkills.length > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium">
+                      {managedSkills.length}
+                    </span>
+                  )}
+                </button>
               </div>
 
               {umaTab === "setup" && <>
@@ -1023,6 +1158,9 @@ const AdminPanel: React.FC = () => {
                       <p><span className="text-foreground">avatar_url</span> — optional</p>
                       <p><span className="text-foreground">skill_name</span> — optional</p>
                       <p><span className="text-foreground">skill_description</span> — optional, used with skill_name</p>
+                    </div>
+                    <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-600 dark:text-yellow-400">
+                      <span className="font-semibold">Avatar images:</span> Use URLs from hotlink-friendly hosts (e.g. Imgur, GitHub raw). Most sites (Reddit, Wikis, Google) block direct image embedding and will show as broken.
                     </div>
                     <form onSubmit={handleCsvImport} className="flex items-end gap-3">
                       <div className="flex-1">
@@ -1263,7 +1401,7 @@ const AdminPanel: React.FC = () => {
                   </Dialog>
 
                   {/* Edit Uma Dialog */}
-                  <Dialog open={!!editingUma} onOpenChange={(open) => { if (!open) setEditingUma(null); }}>
+                  <Dialog open={!!editingUma} onOpenChange={(open) => { if (!open) { setEditingUma(null); setDeleteConfirmId(null); } }}>
                     <DialogContent className="max-w-md">
                       <DialogHeader>
                         <DialogTitle>Edit Uma</DialogTitle>
@@ -1304,7 +1442,7 @@ const AdminPanel: React.FC = () => {
                                   >
                                     <div className="flex-1 min-w-0">
                                       <p className="text-sm font-medium">{skill.name}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
+                                      <p className="text-xs text-muted-foreground">{skill.description}</p>
                                     </div>
                                     <button
                                       type="button"
@@ -1319,25 +1457,171 @@ const AdminPanel: React.FC = () => {
                               </div>
                             )}
                           </div>
-                          <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-between gap-2">
-                            <Button
-                              type="button"
-                              variant={editingUma.is_active ? "destructive" : "outline"}
-                              onClick={() => { handleToggleUmaActive(editingUma); setEditingUma(null); }}
-                            >
-                              {editingUma.is_active ? "Disable Uma" : "Enable Uma"}
-                            </Button>
-                            <div className="flex gap-2 justify-end">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => setEditingUma(null)}
-                              >
-                                Cancel
-                              </Button>
-                              <Button type="submit" disabled={isUpdatingUma}>
-                                {isUpdatingUma ? "Saving..." : "Save Changes"}
-                              </Button>
+                          <DialogFooter>
+                            <div className="flex w-full flex-col gap-3">
+                              {/* Primary actions */}
+                              <div className="flex justify-between items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant={editingUma.is_active ? "destructive" : "outline"}
+                                  onClick={() => { handleToggleUmaActive(editingUma); setEditingUma(null); }}
+                                >
+                                  {editingUma.is_active ? "Disable Uma" : "Enable Uma"}
+                                </Button>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setEditingUma(null)}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button type="submit" disabled={isUpdatingUma}>
+                                    {isUpdatingUma ? "Saving..." : "Save Changes"}
+                                  </Button>
+                                </div>
+                              </div>
+                              {/* Danger zone */}
+                              <div className="border-t border-border/50 pt-3">
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  className="w-full"
+                                  onClick={() => {
+                                    if (deleteConfirmId === editingUma.id) {
+                                      handleDeleteUma(editingUma);
+                                      setDeleteConfirmId(null);
+                                    } else {
+                                      setDeleteConfirmId(editingUma.id);
+                                    }
+                                  }}
+                                >
+                                  {deleteConfirmId === editingUma.id ? "Confirm Delete? (Irreversible)" : "Delete Uma"}
+                                </Button>
+                              </div>
+                            </div>
+                          </DialogFooter>
+                        </form>
+                      )}
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              )}
+
+              {/* ── Skills Tab ── */}
+              {umaTab === "skills" && (
+                <div className="space-y-4">
+                  <Input
+                    placeholder="Search by skill name or Uma..."
+                    value={skillTabSearch}
+                    onChange={(e) => setSkillTabSearch(e.target.value)}
+                    className="max-w-sm"
+                  />
+
+                  {skillsLoading ? (
+                    <p className="text-sm text-muted-foreground py-8 text-center">Loading skills...</p>
+                  ) : managedSkills.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-8 text-center">No skills found.</p>
+                  ) : (
+                    <div className="rounded-md border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Skill</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Description</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Uma</th>
+                            <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {managedSkills
+                            .filter((s) => {
+                              const q = skillTabSearch.toLowerCase();
+                              return !q || s.name.toLowerCase().includes(q) || (s.uma_name ?? "").toLowerCase().includes(q);
+                            })
+                            .map((skill) => (
+                              <tr key={skill.id} className="hover:bg-muted/30 transition-colors">
+                                <td className="px-4 py-3 font-medium">{skill.name}</td>
+                                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell max-w-xs truncate">{skill.description || "—"}</td>
+                                <td className="px-4 py-3">
+                                  {skill.uma_name ? (
+                                    <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
+                                      {skill.uma_name}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">Unassigned</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <Button size="sm" variant="outline" onClick={() => openEditSkillDialog(skill)}>
+                                    Edit
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Edit Skill Dialog */}
+                  <Dialog open={!!editingSkill} onOpenChange={(open) => { if (!open) { setEditingSkill(null); setSkillDeleteConfirmId(null); } }}>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Edit Skill</DialogTitle>
+                      </DialogHeader>
+                      {editingSkill && (
+                        <form onSubmit={handleUpdateSkill} className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="skill-name">Name</Label>
+                            <Input
+                              id="skill-name"
+                              value={editSkillName}
+                              onChange={(e) => setEditSkillName(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="skill-desc">Description</Label>
+                            <textarea
+                              id="skill-desc"
+                              value={editSkillDescription}
+                              onChange={(e) => setEditSkillDescription(e.target.value)}
+                              rows={3}
+                              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
+                          </div>
+                          {editingSkill.uma_name && (
+                            <p className="text-xs text-muted-foreground">
+                              Assigned to: <span className="font-medium text-foreground">{editingSkill.uma_name}</span>
+                            </p>
+                          )}
+                          <DialogFooter>
+                            <div className="flex w-full flex-col gap-3">
+                              <div className="flex justify-between items-center gap-2">
+                                <Button type="button" variant="outline" onClick={() => setEditingSkill(null)}>
+                                  Cancel
+                                </Button>
+                                <Button type="submit" disabled={isSavingSkill}>
+                                  {isSavingSkill ? "Saving..." : "Save Changes"}
+                                </Button>
+                              </div>
+                              <div className="border-t border-border/50 pt-3">
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  className="w-full"
+                                  onClick={() => {
+                                    if (skillDeleteConfirmId === editingSkill.id) {
+                                      handleDeleteSkill(editingSkill);
+                                      setSkillDeleteConfirmId(null);
+                                    } else {
+                                      setSkillDeleteConfirmId(editingSkill.id);
+                                    }
+                                  }}
+                                >
+                                  {skillDeleteConfirmId === editingSkill.id ? "Confirm Delete? (Irreversible)" : "Delete Skill"}
+                                </Button>
+                              </div>
                             </div>
                           </DialogFooter>
                         </form>

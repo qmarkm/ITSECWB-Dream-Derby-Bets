@@ -129,6 +129,11 @@ const CreateUmamusume: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!selectedBaseUma) {
+      toast.error("Please select a base Umamusume");
+      return;
+    }
+
     if (!name.trim()) {
       toast.error("Please enter a name");
       return;
@@ -187,7 +192,7 @@ const CreateUmamusume: React.FC = () => {
             <CardContent className="space-y-6">
               {/* Base Uma Selection */}
               <div className="space-y-2">
-                <Label>Base Umamusume (Optional)</Label>
+                <Label>Base Umamusume</Label>
                 <div className="relative">
                   <Input
                     placeholder="Search base umamusume..."

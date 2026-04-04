@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Upload, X, Check, Trash2 } from "lucide-react";
+import { useNavigate, useParams, Navigate } from "react-router-dom";
+import { ArrowLeft, X, Check, Trash2 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,139 +9,163 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import { AVAILABLE_SKILLS, APTITUDE_GRADES } from "@/data/skills";
-import { AptitudeGrade, Umamusume, UmamusumeAptitudes, UmamusumeStats } from "@/types";
-import { mockUmamusumes } from "@/data/mockData";
+import { APTITUDE_GRADES } from "@/data/skills";
 import { toast } from "sonner";
+import {
+  getUma,
+  getSkills,
+  updateUma,
+  deleteUma,
+  Uma,
+  Skill,
+  AptitudeCreationData,
+  AptitudeRank,
+} from "@/services/umaService";
+
+const STAT_KEYS = ["speed", "stamina", "power", "guts", "wit"] as const;
+type StatKey = typeof STAT_KEYS[number];
+
+const APTITUDE_KEYS = ["turf", "dirt", "short", "mile", "medium", "long", "front", "pace", "late", "end"] as const;
+type AptitudeKey = typeof APTITUDE_KEYS[number];
+
+const DEFAULT_APTITUDES: AptitudeCreationData = {
+  turf: "G", dirt: "G",
+  short: "G", mile: "G", medium: "G", long: "G",
+  front: "G", pace: "G", late: "G", end: "G",
+};
 
 const EditUmamusume: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
-  
+  const { user, isAuthenticated, isAuthLoading } = useAuth();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [originalUma, setOriginalUma] = useState<Uma | null>(null);
+  const [notFound, setNotFound] = useState(false);
+
   const [name, setName] = useState("");
-  const [picture, setPicture] = useState<string>("");
   const [skillSearch, setSkillSearch] = useState("");
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<number[]>([]);
   const [showSkillDropdown, setShowSkillDropdown] = useState(false);
-  const [originalUma, setOriginalUma] = useState<Umamusume | null>(null);
-  
-  const [stats, setStats] = useState<UmamusumeStats>({
-    speed: 0,
-    stamina: 0,
-    power: 0,
-    guts: 0,
-    wit: 0,
+
+  const [stats, setStats] = useState<Record<StatKey, number>>({
+    speed: 0, stamina: 0, power: 0, guts: 0, wit: 0,
   });
-  
-  const [aptitudes, setAptitudes] = useState<UmamusumeAptitudes>({
-    turf: "A",
-    dirt: "A",
-    short: "A",
-    mile: "A",
-    medium: "A",
-    long: "A",
-    front: "A",
-    pace: "A",
-    late: "A",
-    end: "A",
-  });
+
+  const [aptitudes, setAptitudes] = useState<AptitudeCreationData>(DEFAULT_APTITUDES);
 
   useEffect(() => {
-    const storedUmas: Umamusume[] = JSON.parse(localStorage.getItem("userUmamusumes") || "[]");
-    const allUmas = [...mockUmamusumes, ...storedUmas];
-    const uma = allUmas.find(u => u.id === id);
-    
-    if (uma) {
-      setOriginalUma(uma);
-      setName(uma.name);
-      setPicture(uma.picture);
-      setSelectedSkills(uma.skills || []);
-      if (uma.stats) setStats(uma.stats);
-      if (uma.aptitudes) setAptitudes(uma.aptitudes);
+    if (!isAuthenticated) return;
+    const numericId = Number(id);
+    if (!numericId) {
+      setNotFound(true);
+      setIsLoading(false);
+      return;
     }
-  }, [id]);
 
-  const filteredSkills = AVAILABLE_SKILLS.filter(
-    skill => 
-      skill.toLowerCase().includes(skillSearch.toLowerCase()) &&
-      !selectedSkills.includes(skill)
+    const fetchData = async () => {
+      try {
+        const [uma, skills] = await Promise.all([getUma(numericId), getSkills()]);
+        setOriginalUma(uma);
+        setName(uma.name);
+        setSelectedSkillIds(uma.skills.map((s) => s.id));
+        setStats({
+          speed: uma.speed,
+          stamina: uma.stamina,
+          power: uma.power,
+          guts: uma.guts,
+          wit: uma.wit,
+        });
+        if (uma.aptitudes) {
+          setAptitudes(uma.aptitudes);
+        }
+        setAvailableSkills(skills);
+      } catch {
+        setNotFound(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchData();
+  }, [id, isAuthenticated]);
+
+  const filteredSkills = availableSkills.filter(
+    (s) =>
+      s.name.toLowerCase().includes(skillSearch.toLowerCase()) &&
+      !selectedSkillIds.includes(s.id)
   );
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.match(/^image\/(png|gif)$/)) {
-        toast.error("Please upload a PNG or GIF file");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPicture(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const selectedSkillObjects = availableSkills.filter((s) => selectedSkillIds.includes(s.id));
 
-  const handleStatChange = (stat: keyof UmamusumeStats, value: string) => {
+  const handleStatChange = (stat: StatKey, value: string) => {
     const numValue = Math.min(1200, Math.max(0, parseInt(value) || 0));
-    setStats(prev => ({ ...prev, [stat]: numValue }));
+    setStats((prev) => ({ ...prev, [stat]: numValue }));
   };
 
-  const handleAptitudeChange = (aptitude: keyof UmamusumeAptitudes, value: AptitudeGrade) => {
-    setAptitudes(prev => ({ ...prev, [aptitude]: value }));
-  };
-
-  const addSkill = (skill: string) => {
-    setSelectedSkills(prev => [...prev, skill]);
+  const addSkill = (skillId: number) => {
+    setSelectedSkillIds((prev) => [...prev, skillId]);
     setSkillSearch("");
     setShowSkillDropdown(false);
   };
 
-  const removeSkill = (skill: string) => {
-    setSelectedSkills(prev => prev.filter(s => s !== skill));
+  const removeSkill = (skillId: number) => {
+    setSelectedSkillIds((prev) => prev.filter((s) => s !== skillId));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!name.trim()) {
       toast.error("Please enter a name");
       return;
     }
-
-    const updatedUmamusume: Umamusume = {
-      ...originalUma!,
-      name,
-      picture: picture || originalUma!.picture,
-      stats,
-      skills: selectedSkills,
-      aptitudes,
-    };
-
-    const storedUmas: Umamusume[] = JSON.parse(localStorage.getItem("userUmamusumes") || "[]");
-    const updatedUmas = storedUmas.map(u => u.id === id ? updatedUmamusume : u);
-    localStorage.setItem("userUmamusumes", JSON.stringify(updatedUmas));
-    
-    toast.success("Umamusume updated successfully!");
-    navigate(`/umamusume/${id}`);
+    setIsSaving(true);
+    try {
+      await updateUma(Number(id), {
+        name: name.trim(),
+        ...stats,
+        skill_ids: selectedSkillIds,
+        aptitudes,
+      });
+      toast.success("Umamusume updated!");
+      navigate(`/umamusume/${id}`);
+    } catch {
+      toast.error("Failed to update. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDelete = () => {
-    const storedUmas: Umamusume[] = JSON.parse(localStorage.getItem("userUmamusumes") || "[]");
-    const filteredUmas = storedUmas.filter(u => u.id !== id);
-    localStorage.setItem("userUmamusumes", JSON.stringify(filteredUmas));
-    
-    toast.success("Umamusume deleted!");
-    navigate("/profile");
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteUma(Number(id));
+      toast.success("Umamusume deleted.");
+      navigate("/profile");
+    } catch {
+      toast.error("Failed to delete. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
-  if (!user) {
-    navigate("/auth");
-    return null;
+  if (isAuthLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/auth" replace />;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="container mx-auto px-4 py-8">
+          <p className="text-center text-muted-foreground">Loading...</p>
+        </main>
+      </div>
+    );
   }
 
-  if (!originalUma) {
+  if (notFound || !originalUma) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
@@ -152,91 +176,67 @@ const EditUmamusume: React.FC = () => {
     );
   }
 
-  const isOwner = originalUma.ownerId === user.id;
-
-  if (!isOwner) {
-    navigate(`/umamusume/${id}`);
-    return null;
+  if (originalUma.user !== user?.id) {
+    return <Navigate to={`/umamusume/${id}`} replace />;
   }
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center justify-between mb-6">
-          <Button
-            variant="ghost"
-            className="-ml-2"
-            onClick={() => navigate(-1)}
-          >
+          <Button variant="ghost" className="-ml-2" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
-          
-          <Button variant="destructive" onClick={handleDelete}>
+
+          <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
             <Trash2 className="h-4 w-4 mr-2" />
-            Delete
+            {isDeleting ? "Deleting..." : "Delete"}
           </Button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Info */}
           <Card>
             <CardHeader>
               <CardTitle>Edit Umamusume</CardTitle>
               <CardDescription>Update your Umamusume's details</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2">
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Enter name..."
+                />
+              </div>
+
+              {originalUma.avatar_url && (
                 <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Enter name..."
+                  <Label>Current Avatar</Label>
+                  <img
+                    src={originalUma.avatar_url}
+                    alt={originalUma.name}
+                    className="h-16 w-16 rounded-lg object-cover border"
                   />
                 </div>
-                
-                <div className="space-y-2">
-                  <Label>Avatar (PNG/GIF)</Label>
-                  <div className="flex items-center gap-4">
-                    {picture ? (
-                      <div className="relative">
-                        <img src={picture} alt="Preview" className="h-16 w-16 rounded-lg object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => setPicture("")}
-                          className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 hover:border-primary transition-colors">
-                        <Upload className="h-6 w-6 text-muted-foreground" />
-                        <input
-                          type="file"
-                          accept=".png,.gif"
-                          onChange={handleImageUpload}
-                          className="hidden"
-                        />
-                      </label>
-                    )}
-                  </div>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
+          {/* Stats */}
           <Card>
             <CardHeader>
               <CardTitle>Statistics</CardTitle>
-              <CardDescription>Set stats between 0-1200</CardDescription>
+              <CardDescription>Set stats between 0–1200</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-5">
-                {(Object.keys(stats) as Array<keyof UmamusumeStats>).map((stat) => (
+                {STAT_KEYS.map((stat) => (
                   <div key={stat} className="space-y-2">
                     <Label htmlFor={stat} className="capitalize">{stat}</Label>
                     <Input
@@ -253,6 +253,7 @@ const EditUmamusume: React.FC = () => {
             </CardContent>
           </Card>
 
+          {/* Skills */}
           <Card>
             <CardHeader>
               <CardTitle>Skills</CardTitle>
@@ -268,29 +269,30 @@ const EditUmamusume: React.FC = () => {
                     setShowSkillDropdown(true);
                   }}
                   onFocus={() => setShowSkillDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowSkillDropdown(false), 150)}
                 />
                 {showSkillDropdown && filteredSkills.length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
                     {filteredSkills.slice(0, 10).map((skill) => (
                       <button
-                        key={skill}
+                        key={skill.id}
                         type="button"
-                        onClick={() => addSkill(skill)}
+                        onMouseDown={() => addSkill(skill.id)}
                         className="w-full px-4 py-2 text-left hover:bg-accent/50 text-sm"
                       >
-                        {skill}
+                        {skill.name}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-              
-              {selectedSkills.length > 0 && (
+
+              {selectedSkillObjects.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {selectedSkills.map((skill) => (
-                    <Badge key={skill} variant="secondary" className="gap-1">
-                      {skill}
-                      <button type="button" onClick={() => removeSkill(skill)}>
+                  {selectedSkillObjects.map((skill) => (
+                    <Badge key={skill.id} variant="secondary" className="gap-1">
+                      {skill.name}
+                      <button type="button" onClick={() => removeSkill(skill.id)}>
                         <X className="h-3 w-3" />
                       </button>
                     </Badge>
@@ -300,6 +302,7 @@ const EditUmamusume: React.FC = () => {
             </CardContent>
           </Card>
 
+          {/* Aptitudes */}
           <Card>
             <CardHeader>
               <CardTitle>Aptitudes</CardTitle>
@@ -307,12 +310,14 @@ const EditUmamusume: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-5">
-                {(Object.keys(aptitudes) as Array<keyof UmamusumeAptitudes>).map((apt) => (
+                {APTITUDE_KEYS.map((apt) => (
                   <div key={apt} className="space-y-2">
                     <Label className="capitalize">{apt}</Label>
                     <Select
                       value={aptitudes[apt]}
-                      onValueChange={(value) => handleAptitudeChange(apt, value as AptitudeGrade)}
+                      onValueChange={(value) =>
+                        setAptitudes((prev) => ({ ...prev, [apt]: value as AptitudeRank }))
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -331,9 +336,9 @@ const EditUmamusume: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Button type="submit" className="w-full" size="lg">
+          <Button type="submit" className="w-full" size="lg" disabled={isSaving}>
             <Check className="h-4 w-4 mr-2" />
-            Save Changes
+            {isSaving ? "Saving..." : "Save Changes"}
           </Button>
         </form>
       </main>

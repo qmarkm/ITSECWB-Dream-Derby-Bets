@@ -23,6 +23,7 @@ from .serializers import (
 
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
+MAX_TRANSACTION_AMOUNT = Decimal('1000000')
 
 
 def _ensure_admin(user):
@@ -127,9 +128,22 @@ def admin_user_detail(request, user_id):
             serializer = UserSerializer(user, context={'request': request})
             return Response(serializer.data)
 
+        # Prevent admins from modifying or deleting their own account via this endpoint
+        if user.pk == request.user.pk:
+            return Response(
+                {'error': 'Administrators cannot modify or delete their own account via this endpoint.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         if request.method == 'PATCH':
             serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
+                # Prevent granting is_superuser without also granting is_staff
+                if serializer.validated_data.get('is_superuser') and not serializer.validated_data.get('is_staff', user.is_staff):
+                    return Response(
+                        {'error': 'Cannot grant is_superuser without also granting is_staff.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
                 serializer.save()
                 return Response(UserSerializer(user, context={'request': request}).data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -264,6 +278,12 @@ def add_balance(request):
         except (ValueError, TypeError):
             return Response({'error': 'Invalid amount.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        if amount > MAX_TRANSACTION_AMOUNT:
+            return Response(
+                {'error': f'Transaction amount cannot exceed {MAX_TRANSACTION_AMOUNT} coins.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         profile = request.user.profile
         profile.balance += amount
         profile.save()
@@ -290,6 +310,12 @@ def deduct_balance(request):
                 return Response({'error': 'Amount must be positive.'}, status=status.HTTP_400_BAD_REQUEST)
         except (ValueError, TypeError):
             return Response({'error': 'Invalid amount.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount > MAX_TRANSACTION_AMOUNT:
+            return Response(
+                {'error': f'Transaction amount cannot exceed {MAX_TRANSACTION_AMOUNT} coins.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         profile = request.user.profile
         if profile.balance < amount:
