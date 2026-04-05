@@ -18,7 +18,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upload } from "lucide-react";
+import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upload, Flag } from "lucide-react";
+import * as eventsService from "@/services/eventsService";
+import type { Track, TrackWriteData, DistCategory, TrackDirection, TrackType } from "@/services/eventsService";
 import { toast } from "sonner";
 
 const AdminPanel: React.FC = () => {
@@ -28,9 +30,24 @@ const AdminPanel: React.FC = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<"dashboard" | "users" | "umamusume" | "settings">(
+  const [activeSection, setActiveSection] = useState<"dashboard" | "users" | "umamusume" | "races" | "settings">(
     "dashboard"
   );
+
+  // ── Tracks state ──
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [tracksLoading, setTracksLoading] = useState(false);
+  const [trackSearch, setTrackSearch] = useState("");
+  const [showCreateTrackForm, setShowCreateTrackForm] = useState(false);
+  const [editingTrack, setEditingTrack] = useState<Track | null>(null);
+  const [trackDeleteConfirmId, setTrackDeleteConfirmId] = useState<number | null>(null);
+  const [isSavingTrack, setIsSavingTrack] = useState(false);
+
+  const EMPTY_TRACK_FORM: TrackWriteData = {
+    name: "", image: "", distance: "",
+    dist_category: "Sprint", direction: "right", track_type: "turf",
+  };
+  const [trackForm, setTrackForm] = useState<TrackWriteData>(EMPTY_TRACK_FORM);
   const [users, setUsers] = useState<BackendUser[]>([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -162,6 +179,9 @@ const AdminPanel: React.FC = () => {
       setIsLoadingUmas(true);
       umaService.adminGetAllUmas().then(setAllUmas).catch(() => {}).finally(() => setIsLoadingUmas(false));
       umaService.getSkills().then(setAllSkills).catch(() => {});
+    }
+    if (isAuthenticated && isAdmin && activeSection === "races") {
+      loadTracks();
     }
   }, [isAuthenticated, isAdmin, activeSection]);
 
@@ -392,6 +412,87 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  // ── Track handlers ──
+  const loadTracks = async () => {
+    setTracksLoading(true);
+    try {
+      const data = await eventsService.adminGetTracks();
+      setTracks(data);
+    } catch {
+      toast.error('Failed to load tracks.');
+    } finally {
+      setTracksLoading(false);
+    }
+  };
+
+  const handleCreateTrack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trackForm.name.trim()) { toast.error('Track name is required.'); return; }
+    setIsSavingTrack(true);
+    try {
+      const created = await eventsService.adminCreateTrack({
+        ...trackForm,
+        name: trackForm.name.trim(),
+        image: trackForm.image?.trim() || undefined,
+        distance: trackForm.distance?.trim() || undefined,
+      });
+      setTracks((prev) => [...prev, created]);
+      setTrackForm(EMPTY_TRACK_FORM);
+      setShowCreateTrackForm(false);
+      toast.success(`Track "${created.name}" created.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to create track.');
+    } finally {
+      setIsSavingTrack(false);
+    }
+  };
+
+  const openEditTrackDialog = (track: Track) => {
+    setEditingTrack(track);
+    setTrackForm({
+      name: track.name,
+      image: track.image || "",
+      distance: track.distance || "",
+      dist_category: track.dist_category,
+      direction: track.direction,
+      track_type: track.track_type,
+    });
+    setTrackDeleteConfirmId(null);
+  };
+
+  const handleUpdateTrack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTrack) return;
+    if (!trackForm.name.trim()) { toast.error('Track name is required.'); return; }
+    setIsSavingTrack(true);
+    try {
+      const updated = await eventsService.adminUpdateTrack(editingTrack.id, {
+        ...trackForm,
+        name: trackForm.name.trim(),
+        image: trackForm.image?.trim() || undefined,
+        distance: trackForm.distance?.trim() || undefined,
+      });
+      setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      setEditingTrack(null);
+      toast.success(`Track "${updated.name}" updated.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to update track.');
+    } finally {
+      setIsSavingTrack(false);
+    }
+  };
+
+  const handleDeleteTrack = async (track: Track) => {
+    try {
+      await eventsService.adminDeleteTrack(track.id);
+      setTracks((prev) => prev.filter((t) => t.id !== track.id));
+      setEditingTrack(null);
+      toast.success(`"${track.name}" deleted.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to delete track.');
+    }
+  };
+
   const handleUpdateUma = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUma) return;
@@ -559,6 +660,14 @@ const AdminPanel: React.FC = () => {
               Umamusume Management
             </Button>
             <Button
+              variant={activeSection === "races" ? "default" : "ghost"}
+              className="w-full justify-start gap-2"
+              onClick={() => setActiveSection("races")}
+            >
+              <Flag className="h-4 w-4" />
+              Race Management
+            </Button>
+            <Button
               variant={activeSection === "settings" ? "default" : "ghost"}
               className="w-full justify-start gap-2"
               onClick={() => setActiveSection("settings")}
@@ -581,6 +690,7 @@ const AdminPanel: React.FC = () => {
                 {activeSection === "dashboard" && "Overview"}
                 {activeSection === "users" && "User Management"}
                 {activeSection === "umamusume" && "Umamusume Management"}
+                {activeSection === "races" && "Race Management"}
                 {activeSection === "settings" && "Settings"}
               </h1>
               <p className="text-sm text-muted-foreground">
@@ -1630,6 +1740,231 @@ const AdminPanel: React.FC = () => {
                   </Dialog>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeSection === "races" && (
+            <div className="space-y-6">
+              {/* ── Tracks ── */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Tracks</CardTitle>
+                    <Button size="sm" onClick={() => { setShowCreateTrackForm((v) => !v); setTrackForm(EMPTY_TRACK_FORM); }}>
+                      {showCreateTrackForm ? "Cancel" : "+ New Track"}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+
+                  {/* Create form */}
+                  {showCreateTrackForm && (
+                    <form onSubmit={handleCreateTrack} className="rounded-md border p-4 space-y-4 bg-muted/30">
+                      <h3 className="text-sm font-semibold">New Track</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label htmlFor="t-name">Name *</Label>
+                          <Input id="t-name" value={trackForm.name} onChange={(e) => setTrackForm({ ...trackForm, name: e.target.value })} placeholder="e.g. Tokyo Racecourse" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="t-image">Image URL</Label>
+                          <Input id="t-image" value={trackForm.image || ""} onChange={(e) => setTrackForm({ ...trackForm, image: e.target.value })} placeholder="https://..." />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="t-distance">Distance</Label>
+                          <Input id="t-distance" value={trackForm.distance || ""} onChange={(e) => setTrackForm({ ...trackForm, distance: e.target.value })} placeholder="e.g. 1600m" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Category</Label>
+                          <select
+                            value={trackForm.dist_category}
+                            onChange={(e) => setTrackForm({ ...trackForm, dist_category: e.target.value as DistCategory })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {(['Sprint', 'Mile', 'Medium', 'Long'] as DistCategory[]).map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Direction</Label>
+                          <select
+                            value={trackForm.direction}
+                            onChange={(e) => setTrackForm({ ...trackForm, direction: e.target.value as TrackDirection })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {(['left', 'right', 'straight'] as TrackDirection[]).map((d) => (
+                              <option key={d} value={d} className="capitalize">{d.charAt(0).toUpperCase() + d.slice(1)}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Track Type</Label>
+                          <select
+                            value={trackForm.track_type}
+                            onChange={(e) => setTrackForm({ ...trackForm, track_type: e.target.value as TrackType })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {(['turf', 'dirt'] as TrackType[]).map((t) => (
+                              <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <Button type="submit" size="sm" disabled={isSavingTrack}>
+                        {isSavingTrack ? "Creating..." : "Create Track"}
+                      </Button>
+                    </form>
+                  )}
+
+                  {/* Search */}
+                  <Input
+                    placeholder="Search tracks..."
+                    value={trackSearch}
+                    onChange={(e) => setTrackSearch(e.target.value)}
+                    className="max-w-sm"
+                  />
+
+                  {/* Table */}
+                  {tracksLoading ? (
+                    <p className="text-sm text-muted-foreground py-6 text-center">Loading tracks...</p>
+                  ) : tracks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-6 text-center">No tracks yet.</p>
+                  ) : (
+                    <div className="rounded-md border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Distance</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Category</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden lg:table-cell">Type</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden lg:table-cell">Direction</th>
+                            <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {tracks
+                            .filter((t) => !trackSearch || t.name.toLowerCase().includes(trackSearch.toLowerCase()))
+                            .map((track) => (
+                              <tr key={track.id} className="hover:bg-muted/30 transition-colors">
+                                <td className="px-4 py-3 font-medium flex items-center gap-2">
+                                  {track.image && (
+                                    <img src={track.image} alt={track.name} className="h-8 w-12 rounded object-cover shrink-0" />
+                                  )}
+                                  {track.name}
+                                </td>
+                                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{track.distance || "—"}</td>
+                                <td className="px-4 py-3 hidden md:table-cell">
+                                  <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
+                                    {track.dist_category}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-muted-foreground capitalize hidden lg:table-cell">{track.track_type}</td>
+                                <td className="px-4 py-3 text-muted-foreground capitalize hidden lg:table-cell">{track.direction}</td>
+                                <td className="px-4 py-3 text-right">
+                                  <Button size="sm" variant="outline" onClick={() => openEditTrackDialog(track)}>
+                                    Edit
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Edit Track Dialog */}
+              <Dialog open={!!editingTrack} onOpenChange={(open) => { if (!open) { setEditingTrack(null); setTrackDeleteConfirmId(null); } }}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Edit Track</DialogTitle>
+                  </DialogHeader>
+                  {editingTrack && (
+                    <form onSubmit={handleUpdateTrack} className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1 sm:col-span-2">
+                          <Label htmlFor="et-name">Name *</Label>
+                          <Input id="et-name" value={trackForm.name} onChange={(e) => setTrackForm({ ...trackForm, name: e.target.value })} />
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <Label htmlFor="et-image">Image URL</Label>
+                          <Input id="et-image" value={trackForm.image || ""} onChange={(e) => setTrackForm({ ...trackForm, image: e.target.value })} placeholder="https://..." />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="et-distance">Distance</Label>
+                          <Input id="et-distance" value={trackForm.distance || ""} onChange={(e) => setTrackForm({ ...trackForm, distance: e.target.value })} placeholder="e.g. 1600m" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Category</Label>
+                          <select
+                            value={trackForm.dist_category}
+                            onChange={(e) => setTrackForm({ ...trackForm, dist_category: e.target.value as DistCategory })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {(['Sprint', 'Mile', 'Medium', 'Long'] as DistCategory[]).map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Direction</Label>
+                          <select
+                            value={trackForm.direction}
+                            onChange={(e) => setTrackForm({ ...trackForm, direction: e.target.value as TrackDirection })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {(['left', 'right', 'straight'] as TrackDirection[]).map((d) => (
+                              <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Track Type</Label>
+                          <select
+                            value={trackForm.track_type}
+                            onChange={(e) => setTrackForm({ ...trackForm, track_type: e.target.value as TrackType })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {(['turf', 'dirt'] as TrackType[]).map((t) => (
+                              <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <div className="flex w-full flex-col gap-3">
+                          <div className="flex justify-between items-center gap-2">
+                            <Button type="button" variant="outline" onClick={() => setEditingTrack(null)}>Cancel</Button>
+                            <Button type="submit" disabled={isSavingTrack}>
+                              {isSavingTrack ? "Saving..." : "Save Changes"}
+                            </Button>
+                          </div>
+                          <div className="border-t border-border/50 pt-3">
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              className="w-full"
+                              onClick={() => {
+                                if (trackDeleteConfirmId === editingTrack.id) {
+                                  handleDeleteTrack(editingTrack);
+                                  setTrackDeleteConfirmId(null);
+                                } else {
+                                  setTrackDeleteConfirmId(editingTrack.id);
+                                }
+                              }}
+                            >
+                              {trackDeleteConfirmId === editingTrack.id ? "Confirm Delete? (Irreversible)" : "Delete Track"}
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogFooter>
+                    </form>
+                  )}
+                </DialogContent>
+              </Dialog>
             </div>
           )}
 

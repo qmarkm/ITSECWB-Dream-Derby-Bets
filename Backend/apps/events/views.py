@@ -10,6 +10,7 @@ from .serializers import (
     BidsUpdateSerializer,
     RaceEventSerializer,
     TrackSerializer,
+    TrackWriteSerializer,
 )
 
 
@@ -33,6 +34,74 @@ def get_tracks(request):
         tracks = Track.objects.all()
         serializer = TrackSerializer(tracks, many=True)
         return Response(serializer.data)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_track(request):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = TrackWriteSerializer(data=request.data)
+        if serializer.is_valid():
+            track = serializer.save()
+            return Response(TrackSerializer(track).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_track(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        track = Track.objects.get(id=id)
+        serializer = TrackWriteSerializer(track, data=request.data, partial=True)
+        if serializer.is_valid():
+            track = serializer.save()
+            return Response(TrackSerializer(track).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Track.DoesNotExist:
+        return Response({'error': 'Track not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_track(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        track = Track.objects.get(id=id)
+
+        race_count = RaceEvent.objects.filter(track=track).count()
+        if race_count > 0:
+            return Response(
+                {'error': f'Cannot delete: {race_count} race event(s) use this track. Remove them first.'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        track.delete()
+        return Response({'message': 'Track deleted successfully.'}, status=status.HTTP_200_OK)
+
+    except Track.DoesNotExist:
+        return Response({'error': 'Track not found.'}, status=status.HTTP_404_NOT_FOUND)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     finally:

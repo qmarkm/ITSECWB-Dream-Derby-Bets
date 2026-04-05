@@ -4,6 +4,9 @@ from . import views
 urlpatterns = [
     path('', views.index, name='events_index'),
     path('tracks/', views.get_tracks, name='get_tracks'),
+    path('tracks/create/', views.create_track, name='create_track'),
+    path('tracks/<int:id>/update/', views.update_track, name='update_track'),
+    path('tracks/<int:id>/delete/', views.delete_track, name='delete_track'),
     path('my-bids/', views.my_bids, name='my_bids'),
     path('bids/<int:bid_id>/', views.bid_detail, name='bid_detail'),
     path('<int:id>/', views.get_race_event, name='get_race_event'),

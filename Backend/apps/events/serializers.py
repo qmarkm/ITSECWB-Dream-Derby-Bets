@@ -1,13 +1,58 @@
+import re
+
 from rest_framework import serializers
 from .models import Track, RaceEvent, Results, Bids
 from ..umamusume.serializers import UmamusumeSerializer
+
+_HTML_PATTERN = re.compile(r'<[^>]+>')
+_XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
+_VALID_URL_SCHEMES = ('http://', 'https://')
 
 
 class TrackSerializer(serializers.ModelSerializer):
     class Meta:
         model = Track
         fields = ['id', 'name', 'image', 'distance', 'dist_category', 'direction', 'track_type']
-        read_only_fields = ['id', 'name', 'image', 'distance', 'dist_category', 'direction', 'track_type']
+        read_only_fields = ['id']
+
+
+class TrackWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Track
+        fields = ['name', 'image', 'distance', 'dist_category', 'direction', 'track_type']
+        extra_kwargs = {
+            'image': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'distance': {'required': False, 'allow_blank': True},
+        }
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be empty.")
+        if len(value) > 100:
+            raise serializers.ValidationError("Name cannot exceed 100 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Name must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Name contains invalid content.")
+        return value
+
+    def validate_image(self, value):
+        if not value:
+            return value
+        if not value.startswith(_VALID_URL_SCHEMES):
+            raise serializers.ValidationError("Image URL must use http or https.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Image URL contains invalid content.")
+        return value
+
+    def validate_distance(self, value):
+        if not value:
+            return value
+        value = value.strip()
+        if len(value) > 10:
+            raise serializers.ValidationError("Distance cannot exceed 10 characters.")
+        return value
 
 
 class ResultsWithUmaSerializer(serializers.ModelSerializer):
