@@ -11,12 +11,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useUmas } from '@/hooks/use-umas';
+import { getMyBids } from "@/services/eventsService";
+import type { Bid } from "@/services/eventsService";
+import { StatusBadge } from "@/components/StatusBadge";
 
 const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { user, updateAccount, uploadAvatar, isLoading } = useAuth();
 
   const { umas, isLoading: isLoadingUmas, fetchMyUmas } = useUmas();
+  const [bids, setBids] = useState<Bid[]>([]);
+  const [bidsLoading, setBidsLoading] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editedUsername, setEditedUsername] = useState(user?.username || "");
@@ -25,6 +30,8 @@ const Profile: React.FC = () => {
   useEffect(() => {
     if (user) {
       fetchMyUmas();
+      setBidsLoading(true);
+      getMyBids().then(setBids).catch(() => {}).finally(() => setBidsLoading(false));
     }
   }, [user, fetchMyUmas]);
 
@@ -275,6 +282,49 @@ const Profile: React.FC = () => {
                       Create Your First Umamusume
                     </Link>
                   </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* My Bids Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>My Bids</CardTitle>
+              <CardDescription>Your recent betting history</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {bidsLoading ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">Loading bids...</p>
+              ) : bids.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">You haven't placed any bids yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {bids.map((bid) => (
+                    <Link
+                      key={bid.id}
+                      to={`/race/${bid.race_event}`}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate">
+                          {bid.race_track_name ?? `Race #${bid.race_event}`}
+                        </p>
+                        {bid.umamusume_name && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            Bet on {bid.umamusume_name}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(bid.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <StatusBadge status={bid.race_event_status} />
+                        <span className="font-bold text-sm">{Number(bid.amount).toLocaleString()}</span>
+                      </div>
+                    </Link>
+                  ))}
                 </div>
               )}
             </CardContent>

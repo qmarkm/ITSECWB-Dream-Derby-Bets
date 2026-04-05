@@ -52,6 +52,10 @@ class TrackWriteSerializer(serializers.ModelSerializer):
         value = value.strip()
         if len(value) > 10:
             raise serializers.ValidationError("Distance cannot exceed 10 characters.")
+        if _HTML_PATTERN.search(value):
+            raise serializers.ValidationError("Distance must not contain HTML tags.")
+        if _XSS_PATTERN.search(value):
+            raise serializers.ValidationError("Distance contains invalid content.")
         return value
 
 
@@ -72,14 +76,16 @@ class RaceEventSerializer(serializers.ModelSerializer):
     umas = serializers.SerializerMethodField()
     bid_count = serializers.SerializerMethodField()
     participants = serializers.SerializerMethodField()
+    track_name = serializers.CharField(source='track.name', read_only=True, allow_null=True)
+    host_username = serializers.CharField(source='host.username', read_only=True)
 
     class Meta:
         model = RaceEvent
         fields = [
-            'id', 'created_at', 'host', 'status',
+            'id', 'created_at', 'host', 'host_username', 'status',
             'opening_dt', 'is_published', 'active_dt',
             'race_start_dt', 'race_end_dt',
-            'umas', 'bid_count', 'track', 'participants',
+            'umas', 'bid_count', 'track', 'track_name', 'participants',
         ]
         read_only_fields = ['id']
 
@@ -111,12 +117,41 @@ class RaceEventSerializer(serializers.ModelSerializer):
 class RaceEventCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = RaceEvent
-        fields = ['status', 'opening_dt', 'is_published', 'active_dt',
-                  'race_start_dt', 'race_end_dt', 'track']
+        fields = ['track', 'opening_dt', 'is_published', 'active_dt',
+                  'race_start_dt', 'race_end_dt']
+        extra_kwargs = {
+            'track': {'required': False, 'allow_null': True},
+            'opening_dt': {'required': False, 'allow_null': True},
+            'active_dt': {'required': False, 'allow_null': True},
+            'race_start_dt': {'required': False, 'allow_null': True},
+            'race_end_dt': {'required': False, 'allow_null': True},
+        }
 
     def create(self, validated_data):
         validated_data['host'] = self.context['request'].user
+        validated_data.setdefault('status', RaceEvent.Status.scheduled)
         return super().create(validated_data)
+
+
+class RaceEventUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RaceEvent
+        fields = ['status', 'track', 'opening_dt', 'is_published',
+                  'active_dt', 'race_start_dt', 'race_end_dt']
+        extra_kwargs = {
+            'status': {'required': False},
+            'track': {'required': False, 'allow_null': True},
+            'opening_dt': {'required': False, 'allow_null': True},
+            'is_published': {'required': False},
+            'active_dt': {'required': False, 'allow_null': True},
+            'race_start_dt': {'required': False, 'allow_null': True},
+            'race_end_dt': {'required': False, 'allow_null': True},
+        }
+
+
+class RaceResultInputSerializer(serializers.Serializer):
+    result_id = serializers.IntegerField(min_value=1)
+    place = serializers.IntegerField(min_value=1)
 
 
 class ResultsSerializer(serializers.ModelSerializer):
@@ -134,18 +169,33 @@ class BidsSerializer(serializers.ModelSerializer):
     """Read serializer — used for all bid responses."""
     bidder_username = serializers.CharField(source='bidder.username', read_only=True)
     race_event_status = serializers.CharField(source='race_event.status', read_only=True)
+    race_track_name = serializers.SerializerMethodField()
+    umamusume_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Bids
         fields = [
-            'id', 'race_event', 'race_event_status',
+            'id', 'race_event', 'race_event_status', 'race_track_name',
             'bidder', 'bidder_username',
-            'amount', 'uma', 'created_at',
+            'amount', 'uma', 'umamusume_name', 'created_at',
         ]
         read_only_fields = [
             'id', 'bidder', 'bidder_username',
-            'race_event', 'race_event_status', 'created_at',
+            'race_event', 'race_event_status', 'race_track_name',
+            'umamusume_name', 'created_at',
         ]
+
+    def get_race_track_name(self, obj):
+        try:
+            return obj.race_event.track.name if obj.race_event.track else None
+        except Exception:
+            return None
+
+    def get_umamusume_name(self, obj):
+        try:
+            return obj.uma.umamusume.name if obj.uma else None
+        except Exception:
+            return None
 
 
 class BidsCreateSerializer(serializers.ModelSerializer):

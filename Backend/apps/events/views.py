@@ -3,12 +3,17 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Bids, RaceEvent, Track
+from .models import Bids, RaceEvent, Results, Track
+from ..umamusume.models import Umamusume
 from .serializers import (
     BidsCreateSerializer,
     BidsSerializer,
     BidsUpdateSerializer,
+    RaceEventCreateSerializer,
     RaceEventSerializer,
+    RaceEventUpdateSerializer,
+    RaceResultInputSerializer,
+    ResultsSerializer,
     TrackSerializer,
     TrackWriteSerializer,
 )
@@ -131,12 +136,157 @@ def get_race_event(request, id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_race_event(request):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = RaceEventCreateSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            race = serializer.save()
+            return Response(RaceEventSerializer(race).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_race_event(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        race = RaceEvent.objects.get(id=id)
+        serializer = RaceEventUpdateSerializer(race, data=request.data, partial=True)
+        if serializer.is_valid():
+            race = serializer.save()
+            return Response(RaceEventSerializer(race).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except RaceEvent.DoesNotExist:
+        return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_race_event(request, id):
+    try:
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        race = RaceEvent.objects.get(id=id)
+
+        # Refund all bids before deleting
+        for bid in race.bids.select_related('bidder__profile').all():
+            profile = bid.bidder.profile
+            profile.balance += bid.amount
+            profile.save()
+
+        race.delete()
+        return Response({'message': 'Race event deleted and bids refunded.'}, status=status.HTTP_200_OK)
+
+    except RaceEvent.DoesNotExist:
+        return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def set_race_results(request, id):
     """
-    Placeholder — will be implemented by the admin task owner.
-    POST /api/events/create/
+    Admin sets finishing places for each Results entry.
+    Body: [{"result_id": 1, "place": 1}, {"result_id": 2, "place": 2}, ...]
     """
     try:
-        return Response({'detail': 'Not implemented.'}, status=status.HTTP_501_NOT_IMPLEMENTED)
+        if not (request.user.is_staff and request.user.is_superuser):
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        race = RaceEvent.objects.get(id=id)
+
+        if not isinstance(request.data, list):
+            return Response({'error': 'Expected a list of result assignments.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        input_serializer = RaceResultInputSerializer(data=request.data, many=True)
+        if not input_serializer.is_valid():
+            return Response(input_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        valid_result_ids = set(race.results.values_list('id', flat=True))
+        updates = input_serializer.validated_data
+
+        for entry in updates:
+            if entry['result_id'] not in valid_result_ids:
+                return Response(
+                    {'error': f"Result ID {entry['result_id']} does not belong to this race."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        for entry in updates:
+            Results.objects.filter(id=entry['result_id'], race_event=race).update(place=entry['place'])
+
+        race.refresh_from_db()
+        return Response(RaceEventSerializer(race).data)
+
+    except RaceEvent.DoesNotExist:
+        return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def enroll_umamusume(request, id):
+    """
+    Trainer enrolls one of their Umamusume in a scheduled race.
+    Body: {"umamusume_id": <int>}
+    """
+    try:
+        race = RaceEvent.objects.get(id=id)
+
+        if race.status != RaceEvent.Status.scheduled:
+            return Response(
+                {'error': 'Enrollment is only allowed while the race is scheduled.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        umamusume_id = request.data.get('umamusume_id')
+        try:
+            umamusume_id = int(umamusume_id)
+            if umamusume_id < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            return Response({'error': 'umamusume_id must be a positive integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            umamusume = Umamusume.objects.get(id=umamusume_id, user=request.user)
+        except Umamusume.DoesNotExist:
+            return Response(
+                {'error': 'Umamusume not found or does not belong to you.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if Results.objects.filter(race_event=race, umamusume=umamusume).exists():
+            return Response(
+                {'error': 'This Umamusume is already enrolled in this race.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        result = Results.objects.create(race_event=race, umamusume=umamusume, place=None)
+        return Response(ResultsSerializer(result).data, status=status.HTTP_201_CREATED)
+
+    except RaceEvent.DoesNotExist:
+        return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     finally:
@@ -170,7 +320,9 @@ def place_bid(request, id):
 @permission_classes([IsAuthenticated])
 def my_bids(request):
     try:
-        bids = Bids.objects.filter(bidder=request.user).select_related('race_event', 'uma')
+        bids = Bids.objects.filter(bidder=request.user).select_related(
+            'race_event', 'race_event__track', 'uma', 'uma__umamusume'
+        )
 
         valid_statuses = [s.value for s in RaceEvent.Status]
         event_status = request.query_params.get('status')

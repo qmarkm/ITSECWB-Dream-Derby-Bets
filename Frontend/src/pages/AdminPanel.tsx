@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upload, Flag } from "lucide-react";
 import * as eventsService from "@/services/eventsService";
-import type { Track, TrackWriteData, DistCategory, TrackDirection, TrackType } from "@/services/eventsService";
+import type { Track, TrackWriteData, DistCategory, TrackDirection, TrackType, RaceEvent, RaceEventWriteData, RaceEventUpdateData, RaceStatus, RaceResultInput, RaceParticipant } from "@/services/eventsService";
 import { toast } from "sonner";
 
 const AdminPanel: React.FC = () => {
@@ -48,6 +48,29 @@ const AdminPanel: React.FC = () => {
     dist_category: "Sprint", direction: "right", track_type: "turf",
   };
   const [trackForm, setTrackForm] = useState<TrackWriteData>(EMPTY_TRACK_FORM);
+
+  // ── Race Events state ──
+  const [raceEvents, setRaceEvents] = useState<RaceEvent[]>([]);
+  const [racesLoading, setRacesLoading] = useState(false);
+  const [raceSearch, setRaceSearch] = useState("");
+  const [showCreateRaceForm, setShowCreateRaceForm] = useState(false);
+  const [editingRace, setEditingRace] = useState<RaceEvent | null>(null);
+  const [raceDeleteConfirmId, setRaceDeleteConfirmId] = useState<number | null>(null);
+  const [isSavingRace, setIsSavingRace] = useState(false);
+  const RACE_STATUSES: RaceStatus[] = ['scheduled', 'open', 'active', 'race_ongoing', 'completed'];
+
+  const EMPTY_RACE_FORM: RaceEventWriteData = {
+    track: null, opening_dt: null, is_published: false,
+    active_dt: null, race_start_dt: null, race_end_dt: null,
+  };
+  const [raceForm, setRaceForm] = useState<RaceEventWriteData>(EMPTY_RACE_FORM);
+  const [raceEditForm, setRaceEditForm] = useState<RaceEventUpdateData>({});
+
+  // Set results dialog
+  const [setResultsRace, setSetResultsRace] = useState<RaceEvent | null>(null);
+  const [resultAssignments, setResultAssignments] = useState<Record<number, string>>({});
+  const [isSavingResults, setIsSavingResults] = useState(false);
+
   const [users, setUsers] = useState<BackendUser[]>([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -182,6 +205,7 @@ const AdminPanel: React.FC = () => {
     }
     if (isAuthenticated && isAdmin && activeSection === "races") {
       loadTracks();
+      loadRaceEvents();
     }
   }, [isAuthenticated, isAdmin, activeSection]);
 
@@ -490,6 +514,112 @@ const AdminPanel: React.FC = () => {
       toast.success(`"${track.name}" deleted.`);
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Failed to delete track.');
+    }
+  };
+
+  // ── Race Event handlers ──
+  const loadRaceEvents = async () => {
+    setRacesLoading(true);
+    try {
+      const data = await eventsService.adminGetRaceEvents();
+      setRaceEvents(data);
+    } catch {
+      toast.error('Failed to load race events.');
+    } finally {
+      setRacesLoading(false);
+    }
+  };
+
+  const handleCreateRaceEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingRace(true);
+    try {
+      const created = await eventsService.adminCreateRaceEvent(raceForm);
+      setRaceEvents((prev) => [created, ...prev]);
+      setRaceForm(EMPTY_RACE_FORM);
+      setShowCreateRaceForm(false);
+      toast.success(`Race #${created.id} created.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to create race event.');
+    } finally {
+      setIsSavingRace(false);
+    }
+  };
+
+  const openEditRaceDialog = (race: RaceEvent) => {
+    setEditingRace(race);
+    setRaceEditForm({
+      status: race.status,
+      track: race.track,
+      opening_dt: race.opening_dt,
+      is_published: race.is_published,
+      active_dt: race.active_dt,
+      race_start_dt: race.race_start_dt,
+      race_end_dt: race.race_end_dt,
+    });
+    setRaceDeleteConfirmId(null);
+  };
+
+  const handleUpdateRaceEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRace) return;
+    setIsSavingRace(true);
+    try {
+      const updated = await eventsService.adminUpdateRaceEvent(editingRace.id, raceEditForm);
+      setRaceEvents((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setEditingRace(null);
+      toast.success(`Race #${updated.id} updated.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to update race event.');
+    } finally {
+      setIsSavingRace(false);
+    }
+  };
+
+  const handleDeleteRaceEvent = async (race: RaceEvent) => {
+    try {
+      await eventsService.adminDeleteRaceEvent(race.id);
+      setRaceEvents((prev) => prev.filter((r) => r.id !== race.id));
+      setEditingRace(null);
+      toast.success(`Race #${race.id} deleted and bids refunded.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to delete race event.');
+    }
+  };
+
+  const openSetResultsDialog = (race: RaceEvent) => {
+    setSetResultsRace(race);
+    const initial: Record<number, string> = {};
+    race.participants.forEach((p) => {
+      initial[p.id] = p.place != null ? String(p.place) : '';
+    });
+    setResultAssignments(initial);
+  };
+
+  const handleSetResults = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!setResultsRace) return;
+    const results: RaceResultInput[] = [];
+    for (const [resultIdStr, placeStr] of Object.entries(resultAssignments)) {
+      const place = parseInt(placeStr);
+      if (placeStr && !isNaN(place) && place >= 1) {
+        results.push({ result_id: parseInt(resultIdStr), place });
+      }
+    }
+    if (results.length === 0) {
+      toast.error('Enter at least one finishing place.');
+      return;
+    }
+    setIsSavingResults(true);
+    try {
+      const updated = await eventsService.adminSetRaceResults(setResultsRace.id, results);
+      setRaceEvents((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setSetResultsRace(null);
+      toast.success('Results saved.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to save results.');
+    } finally {
+      setIsSavingResults(false);
     }
   };
 
@@ -1875,6 +2005,318 @@ const AdminPanel: React.FC = () => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* ── Race Events ── */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Race Events</CardTitle>
+                    <Button size="sm" onClick={() => { setShowCreateRaceForm((v) => !v); setRaceForm(EMPTY_RACE_FORM); }}>
+                      {showCreateRaceForm ? "Cancel" : "+ New Race"}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Create form */}
+                  {showCreateRaceForm && (
+                    <form onSubmit={handleCreateRaceEvent} className="rounded-md border p-4 space-y-4 bg-muted/30">
+                      <h3 className="text-sm font-semibold">New Race Event</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label>Track</Label>
+                          <select
+                            value={raceForm.track ?? ""}
+                            onChange={(e) => setRaceForm({ ...raceForm, track: e.target.value ? Number(e.target.value) : null })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="">— No track —</option>
+                            {tracks.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="r-opening">Opening Date</Label>
+                          <Input
+                            id="r-opening"
+                            type="datetime-local"
+                            value={raceForm.opening_dt?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceForm({ ...raceForm, opening_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="r-active">Active Date</Label>
+                          <Input
+                            id="r-active"
+                            type="datetime-local"
+                            value={raceForm.active_dt?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceForm({ ...raceForm, active_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="r-start">Race Start</Label>
+                          <Input
+                            id="r-start"
+                            type="datetime-local"
+                            value={raceForm.race_start_dt?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceForm({ ...raceForm, race_start_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="r-end">Race End</Label>
+                          <Input
+                            id="r-end"
+                            type="datetime-local"
+                            value={raceForm.race_end_dt?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceForm({ ...raceForm, race_end_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 pt-5">
+                          <Switch
+                            id="r-published"
+                            checked={!!raceForm.is_published}
+                            onCheckedChange={(v) => setRaceForm({ ...raceForm, is_published: v })}
+                          />
+                          <Label htmlFor="r-published">Published</Label>
+                        </div>
+                      </div>
+                      <Button type="submit" size="sm" disabled={isSavingRace}>
+                        {isSavingRace ? "Creating..." : "Create Race"}
+                      </Button>
+                    </form>
+                  )}
+
+                  {/* Search */}
+                  <Input
+                    placeholder="Search by track or host..."
+                    value={raceSearch}
+                    onChange={(e) => setRaceSearch(e.target.value)}
+                    className="max-w-sm"
+                  />
+
+                  {/* Table */}
+                  {racesLoading ? (
+                    <p className="text-sm text-muted-foreground py-6 text-center">Loading race events...</p>
+                  ) : raceEvents.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-6 text-center">No race events yet.</p>
+                  ) : (
+                    <div className="rounded-md border overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground">#</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Track</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">Host</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden lg:table-cell">Bids</th>
+                            <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden lg:table-cell">Participants</th>
+                            <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {raceEvents
+                            .filter((r) => {
+                              const q = raceSearch.toLowerCase();
+                              return !q || (r.track_name ?? "").toLowerCase().includes(q) || r.host_username.toLowerCase().includes(q);
+                            })
+                            .map((race) => (
+                              <tr key={race.id} className="hover:bg-muted/30 transition-colors">
+                                <td className="px-4 py-3 text-muted-foreground font-mono">{race.id}</td>
+                                <td className="px-4 py-3 font-medium">{race.track_name ?? <span className="text-muted-foreground">—</span>}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                    race.status === 'completed' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+                                    race.status === 'open' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                                    race.status === 'race_ongoing' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' :
+                                    race.status === 'active' ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400' :
+                                    'bg-muted text-muted-foreground'
+                                  }`}>
+                                    {race.status}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{race.host_username}</td>
+                                <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{race.bid_count}</td>
+                                <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{race.participants.length}</td>
+                                <td className="px-4 py-3 text-right">
+                                  <div className="flex gap-2 justify-end">
+                                    <Button size="sm" variant="outline" onClick={() => openEditRaceDialog(race)}>Edit</Button>
+                                    <Button size="sm" variant="outline" onClick={() => openSetResultsDialog(race)}>Results</Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Edit Race Event Dialog */}
+              <Dialog open={!!editingRace} onOpenChange={(open) => { if (!open) { setEditingRace(null); setRaceDeleteConfirmId(null); } }}>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Edit Race #{editingRace?.id}</DialogTitle>
+                  </DialogHeader>
+                  {editingRace && (
+                    <form onSubmit={handleUpdateRaceEvent} className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label>Status</Label>
+                          <select
+                            value={raceEditForm.status ?? editingRace.status}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, status: e.target.value as RaceStatus })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {RACE_STATUSES.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Track</Label>
+                          <select
+                            value={raceEditForm.track ?? ""}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, track: e.target.value ? Number(e.target.value) : null })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="">— No track —</option>
+                            {tracks.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Opening Date</Label>
+                          <Input
+                            type="datetime-local"
+                            value={(raceEditForm.opening_dt ?? editingRace.opening_dt)?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, opening_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Active Date</Label>
+                          <Input
+                            type="datetime-local"
+                            value={(raceEditForm.active_dt ?? editingRace.active_dt)?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, active_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Race Start</Label>
+                          <Input
+                            type="datetime-local"
+                            value={(raceEditForm.race_start_dt ?? editingRace.race_start_dt)?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, race_start_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Race End</Label>
+                          <Input
+                            type="datetime-local"
+                            value={(raceEditForm.race_end_dt ?? editingRace.race_end_dt)?.slice(0, 16) ?? ""}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, race_end_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 pt-5">
+                          <Switch
+                            id="re-published"
+                            checked={raceEditForm.is_published ?? editingRace.is_published}
+                            onCheckedChange={(v) => setRaceEditForm({ ...raceEditForm, is_published: v })}
+                          />
+                          <Label htmlFor="re-published">Published</Label>
+                        </div>
+                      </div>
+
+                      {/* Participants */}
+                      {editingRace.participants.length > 0 && (
+                        <div className="space-y-2">
+                          <Label>Enrolled Participants ({editingRace.participants.length})</Label>
+                          <div className="rounded-md border divide-y max-h-40 overflow-y-auto">
+                            {editingRace.participants.map((p) => (
+                              <div key={p.id} className="px-3 py-2 flex items-center justify-between text-sm">
+                                <span className="font-medium">{p.umamusume_data?.name ?? `Uma #${p.umamusume}`}</span>
+                                {p.place != null && (
+                                  <span className="text-xs text-muted-foreground">Place: #{p.place}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <DialogFooter>
+                        <div className="flex w-full flex-col gap-3">
+                          <div className="flex justify-between items-center gap-2">
+                            <Button type="button" variant="outline" onClick={() => setEditingRace(null)}>Cancel</Button>
+                            <Button type="submit" disabled={isSavingRace}>
+                              {isSavingRace ? "Saving..." : "Save Changes"}
+                            </Button>
+                          </div>
+                          <div className="border-t border-border/50 pt-3">
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              className="w-full"
+                              onClick={() => {
+                                if (raceDeleteConfirmId === editingRace.id) {
+                                  handleDeleteRaceEvent(editingRace);
+                                  setRaceDeleteConfirmId(null);
+                                } else {
+                                  setRaceDeleteConfirmId(editingRace.id);
+                                }
+                              }}
+                            >
+                              {raceDeleteConfirmId === editingRace.id ? "Confirm Delete? (Bids will be refunded)" : "Delete Race Event"}
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogFooter>
+                    </form>
+                  )}
+                </DialogContent>
+              </Dialog>
+
+              {/* Set Results Dialog */}
+              <Dialog open={!!setResultsRace} onOpenChange={(open) => { if (!open) setSetResultsRace(null); }}>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Set Results — Race #{setResultsRace?.id}</DialogTitle>
+                  </DialogHeader>
+                  {setResultsRace && (
+                    <form onSubmit={handleSetResults} className="space-y-4">
+                      {setResultsRace.participants.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No participants enrolled in this race.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-muted-foreground">Assign a finishing place to each participant. Leave blank to skip.</p>
+                          <div className="rounded-md border divide-y">
+                            {setResultsRace.participants.map((p) => (
+                              <div key={p.id} className="px-3 py-2 flex items-center justify-between gap-4">
+                                <span className="text-sm font-medium">{p.umamusume_data?.name ?? `Uma #${p.umamusume}`}</span>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  placeholder="Place"
+                                  className="w-20 text-center"
+                                  value={resultAssignments[p.id] ?? ''}
+                                  onChange={(e) => setResultAssignments((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setSetResultsRace(null)}>Cancel</Button>
+                        <Button type="submit" disabled={isSavingResults || setResultsRace.participants.length === 0}>
+                          {isSavingResults ? "Saving..." : "Save Results"}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  )}
+                </DialogContent>
+              </Dialog>
 
               {/* Edit Track Dialog */}
               <Dialog open={!!editingTrack} onOpenChange={(open) => { if (!open) { setEditingTrack(null); setTrackDeleteConfirmId(null); } }}>

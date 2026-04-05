@@ -1,64 +1,52 @@
-import React, { useMemo, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
-import { Trophy, Calendar, Zap, Plus } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Trophy, Calendar, Zap } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { EventCard } from "@/components/EventCard";
-import { CreateEventModal } from "@/components/CreateEventModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { mockRaces } from "@/data/mockData";
-import { Race } from "@/types";
-import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { getRaceEvents } from "@/services/eventsService";
+import type { RaceEvent } from "@/services/eventsService";
 
 const Home: React.FC = () => {
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get("search") || "";
-  const { user } = useAuth();
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [races, setRaces] = useState<Race[]>(mockRaces);
+  const [races, setRaces] = useState<RaceEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    setIsLoading(true);
+    getRaceEvents()
+      .then(setRaces)
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, []);
 
   const filteredRaces = useMemo(() => {
     if (!searchQuery) return races;
     const query = searchQuery.toLowerCase();
     return races.filter(
       (race) =>
-        race.name.toLowerCase().includes(query) ||
-        race.description.toLowerCase().includes(query) ||
-        race.umamusumes.some((uma) => uma.name.toLowerCase().includes(query))
+        (race.track_name ?? "").toLowerCase().includes(query) ||
+        race.host_username.toLowerCase().includes(query) ||
+        race.participants.some((p) =>
+          (p.umamusume_data?.name ?? "").toLowerCase().includes(query)
+        )
     );
   }, [searchQuery, races]);
 
-  const racesByStatus = useMemo(() => {
-    return {
-      all: filteredRaces,
-      open: filteredRaces.filter((r) => r.status === "open"),
-      active: filteredRaces.filter((r) => r.status === "active"),
-      upcoming: filteredRaces.filter((r) => r.status === "upcoming"),
-      completed: filteredRaces.filter((r) => r.status === "completed"),
-    };
-  }, [filteredRaces]);
-
-  const handleCreateEvent = (event: { name: string; description: string; scheduledAt: Date }) => {
-    const newRace: Race = {
-      id: `race-${Date.now()}`,
-      name: event.name,
-      description: event.description,
-      status: "open",
-      createdBy: user?.username || "Unknown",
-      umamusumes: [],
-      bets: [],
-      createdAt: new Date(),
-      scheduledAt: event.scheduledAt,
-    };
-    setRaces((prev) => [newRace, ...prev]);
-    toast.success("Race created! Others can now add their Umamusumes.");
-  };
+  const racesByStatus = useMemo(() => ({
+    all: filteredRaces,
+    scheduled: filteredRaces.filter((r) => r.status === "scheduled"),
+    open: filteredRaces.filter((r) => r.status === "open"),
+    active: filteredRaces.filter((r) => r.status === "active" || r.status === "race_ongoing"),
+    completed: filteredRaces.filter((r) => r.status === "completed"),
+  }), [filteredRaces]);
 
   const stats = {
     active: racesByStatus.active.length,
-    totalBets: filteredRaces.reduce((acc, r) => acc + r.bets.length, 0),
-    runners: [...new Set(filteredRaces.flatMap((r) => r.umamusumes.map((u) => u.id)))].length,
+    totalBids: filteredRaces.reduce((acc, r) => acc + r.bid_count, 0),
+    runners: filteredRaces.reduce((acc, r) => acc + r.participants.length, 0),
   };
 
   return (
@@ -74,24 +62,6 @@ const Home: React.FC = () => {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Place your bets on your favorite Umamusumes and watch them race to glory!
           </p>
-          <div className="flex items-center justify-center gap-3 flex-wrap">
-            <Button variant="hero" size="lg" onClick={() => setCreateModalOpen(true)}>
-              <Plus className="h-5 w-5 mr-2" />
-              Create New Race
-            </Button>
-            <Button variant="outline" size="lg" asChild>
-              <Link to="/umas">
-                <Trophy className="h-5 w-5 mr-2" />
-                Browse Umas
-              </Link>
-            </Button>
-            <Button variant="outline" size="lg" asChild>
-              <Link to="/umamusume/create">
-                <Plus className="h-5 w-5 mr-2" />
-                Add Umamusume
-              </Link>
-            </Button>
-          </div>
         </section>
 
         {/* Stats */}
@@ -111,7 +81,7 @@ const Home: React.FC = () => {
               <Trophy className="h-6 w-6 text-accent-foreground" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.totalBets}</p>
+              <p className="text-2xl font-bold">{stats.totalBids}</p>
               <p className="text-sm text-muted-foreground">Total Bets</p>
             </div>
           </div>
@@ -122,7 +92,7 @@ const Home: React.FC = () => {
             </div>
             <div>
               <p className="text-2xl font-bold">{stats.runners}</p>
-              <p className="text-sm text-muted-foreground">Umamusumes</p>
+              <p className="text-sm text-muted-foreground">Enrolled Runners</p>
             </div>
           </div>
         </section>
@@ -141,9 +111,8 @@ const Home: React.FC = () => {
         {/* Race Tabs */}
         <Tabs defaultValue="all" className="space-y-6">
           <TabsList className="w-full justify-start bg-secondary/50 p-1 flex-wrap h-auto gap-1">
-            <TabsTrigger value="all" className="gap-2">
-              All ({racesByStatus.all.length})
-            </TabsTrigger>
+            <TabsTrigger value="all">All ({racesByStatus.all.length})</TabsTrigger>
+            <TabsTrigger value="scheduled">Scheduled ({racesByStatus.scheduled.length})</TabsTrigger>
             <TabsTrigger value="open" className="gap-2">
               <span className="h-2 w-2 rounded-full bg-accent"></span>
               Open ({racesByStatus.open.length})
@@ -155,39 +124,36 @@ const Home: React.FC = () => {
               </span>
               Active ({racesByStatus.active.length})
             </TabsTrigger>
-            <TabsTrigger value="upcoming">Upcoming ({racesByStatus.upcoming.length})</TabsTrigger>
             <TabsTrigger value="completed">Completed ({racesByStatus.completed.length})</TabsTrigger>
           </TabsList>
 
-          {(["all", "open", "active", "upcoming", "completed"] as const).map((tab) => (
-            <TabsContent key={tab} value={tab}>
-              {racesByStatus[tab].length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {racesByStatus[tab].map((race, index) => (
-                    <div
-                      key={race.id}
-                      className="animate-fade-in"
-                      style={{ animationDelay: `${index * 100}ms` }}
-                    >
-                      <EventCard race={race} />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <p>No {tab === "all" ? "" : tab} races found.</p>
-                </div>
-              )}
-            </TabsContent>
-          ))}
+          {isLoading ? (
+            <div className="text-center py-16 text-muted-foreground">Loading races...</div>
+          ) : (
+            (["all", "scheduled", "open", "active", "completed"] as const).map((tab) => (
+              <TabsContent key={tab} value={tab}>
+                {racesByStatus[tab].length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {racesByStatus[tab].map((race, index) => (
+                      <div
+                        key={race.id}
+                        className="animate-fade-in"
+                        style={{ animationDelay: `${index * 100}ms` }}
+                      >
+                        <EventCard race={race} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>No {tab === "all" ? "" : tab} races found.</p>
+                  </div>
+                )}
+              </TabsContent>
+            ))
+          )}
         </Tabs>
       </main>
-
-      <CreateEventModal
-        open={createModalOpen}
-        onOpenChange={setCreateModalOpen}
-        onCreate={handleCreateEvent}
-      />
     </div>
   );
 };
