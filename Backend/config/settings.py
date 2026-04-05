@@ -11,19 +11,23 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-from decouple import config
+from decouple import Config, RepositoryEnv
 from datetime import timedelta
 from urllib.parse import urlparse, unquote
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Single source of truth: root-level .env (one directory above Backend/)
+ROOT_DIR = BASE_DIR.parent
+config = Config(RepositoryEnv(str(ROOT_DIR / '.env')))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-!kln90xcp!d$eb7)-tc)*rj99dm%^ojnk$q4df7sp85hwiob&s')
+SECRET_KEY = config('SECRET_KEY')  # No default — server will refuse to start without a real key
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)

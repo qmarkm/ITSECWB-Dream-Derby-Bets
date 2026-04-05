@@ -1,4 +1,7 @@
+# Environment files — never commit these
 .env
+.env.*
+!.env.example
 master.key
 node_modules
 .claude
