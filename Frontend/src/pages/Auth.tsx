@@ -68,6 +68,12 @@ const Auth: React.FC = () => {
       return;
     }
 
+    const trimmedEmail = signupEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+
     // Full name validation (optional field)
     if (signupFullName && !/^[a-zA-Z\s\-\.\']+$/.test(signupFullName)) {
       toast.error("Full name can only contain letters, spaces, hyphens, dots, and apostrophes");
@@ -100,7 +106,7 @@ const Auth: React.FC = () => {
     try {
       const result = await signup(
         signupUsername,
-        signupEmail,
+        trimmedEmail,
         signupPassword,
         signupConfirmPassword,
         signupFullName || undefined,

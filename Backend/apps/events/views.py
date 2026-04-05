@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -181,15 +182,15 @@ def delete_race_event(request, id):
         if not (request.user.is_staff and request.user.is_superuser):
             return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-        race = RaceEvent.objects.get(id=id)
+        with transaction.atomic():
+            race = RaceEvent.objects.select_for_update().get(id=id)
 
-        # Refund all bids before deleting
-        for bid in race.bids.select_related('bidder__profile').all():
-            profile = bid.bidder.profile
-            profile.balance += bid.amount
-            profile.save()
+            for bid in race.bids.select_related('bidder__profile').all():
+                profile = bid.bidder.profile
+                profile.balance += bid.amount
+                profile.save()
 
-        race.delete()
+            race.delete()
         return Response({'message': 'Race event deleted and bids refunded.'}, status=status.HTTP_200_OK)
 
     except RaceEvent.DoesNotExist:
@@ -222,16 +223,47 @@ def set_race_results(request, id):
 
         valid_result_ids = set(race.results.values_list('id', flat=True))
         updates = input_serializer.validated_data
+        n = len(valid_result_ids)
 
-        for entry in updates:
-            if entry['result_id'] not in valid_result_ids:
-                return Response(
-                    {'error': f"Result ID {entry['result_id']} does not belong to this race."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        if n == 0:
+            return Response(
+                {'error': 'This race has no enrolled participants.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        for entry in updates:
-            Results.objects.filter(id=entry['result_id'], race_event=race).update(place=entry['place'])
+        if len(updates) != n:
+            return Response(
+                {'error': f'Must assign places for all {n} participants (one row per result).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload_ids = {entry['result_id'] for entry in updates}
+        if payload_ids != valid_result_ids:
+            return Response(
+                {'error': 'Each race participant (result row) must appear exactly once in the payload.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        places = [entry['place'] for entry in updates]
+        if len(set(places)) != n:
+            return Response(
+                {'error': 'Each finishing place must be unique.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if sorted(places) != list(range(1, n + 1)):
+            return Response(
+                {'error': f'Places must be the integers 1 through {n}, with no gaps or duplicates.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            race_locked = RaceEvent.objects.select_for_update().get(pk=race.pk)
+            for entry in updates:
+                Results.objects.filter(
+                    id=entry['result_id'], race_event=race_locked
+                ).update(place=entry['place'])
+            race_locked.status = RaceEvent.Status.completed
+            race_locked.save()
 
         race.refresh_from_db()
         return Response(RaceEventSerializer(race).data)
@@ -368,7 +400,8 @@ def bid_detail(request, bid_id):
                 context={'request': request},
             )
             if serializer.is_valid():
-                serializer.save()
+                with transaction.atomic():
+                    serializer.save()
                 bid.refresh_from_db()
                 return Response(BidsSerializer(bid).data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -378,11 +411,11 @@ def bid_detail(request, bid_id):
         if bid.race_event.status not in cancellable_statuses:
             return Response({'error': 'Cannot cancel a bid after betting has closed.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        profile = request.user.profile
-        profile.balance += bid.amount
-        profile.save()
-
-        bid.delete()
+        with transaction.atomic():
+            profile = request.user.profile
+            profile.balance += bid.amount
+            profile.save()
+            bid.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     except Bids.DoesNotExist:

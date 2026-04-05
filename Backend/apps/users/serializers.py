@@ -153,6 +153,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Username must be at most 30 characters.")
         return value
 
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("This email is already in use.")
+        return value
+
     def validate_full_name(self, value):
         if value and not re.match(r'^[a-zA-Z\s\-\.\']+$', value):
             raise serializers.ValidationError("Full name can only contain letters, spaces, hyphens, dots, and apostrophes.")

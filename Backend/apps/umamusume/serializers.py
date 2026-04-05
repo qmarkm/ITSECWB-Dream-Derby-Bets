@@ -83,6 +83,19 @@ class UmamusumeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'user', 'created_at']
 
 class AptitudeUpdateSerializer(serializers.ModelSerializer):
+    _rank = Aptitude.Rank.choices
+
+    turf = serializers.ChoiceField(choices=_rank, required=False)
+    dirt = serializers.ChoiceField(choices=_rank, required=False)
+    short = serializers.ChoiceField(choices=_rank, required=False)
+    mile = serializers.ChoiceField(choices=_rank, required=False)
+    medium = serializers.ChoiceField(choices=_rank, required=False)
+    long = serializers.ChoiceField(choices=_rank, required=False)
+    front = serializers.ChoiceField(choices=_rank, required=False)
+    pace = serializers.ChoiceField(choices=_rank, required=False)
+    late = serializers.ChoiceField(choices=_rank, required=False)
+    end = serializers.ChoiceField(choices=_rank, required=False)
+
     class Meta:
         model = Aptitude
         fields = [

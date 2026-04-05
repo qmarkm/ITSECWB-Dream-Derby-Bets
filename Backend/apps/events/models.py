@@ -60,7 +60,8 @@ class RaceEvent(models.Model):
         db_table = 'race_event'
 
     def __str__(self):
-        return self.name
+        tid = self.track_id or '-'
+        return f"Race #{self.pk} ({self.status}, track={tid})"
 
 class Results(models.Model):
     race_event = models.ForeignKey(RaceEvent, on_delete=models.CASCADE, related_name='results')
@@ -71,8 +72,8 @@ class Results(models.Model):
         db_table = 'race_results'
 
     def __str__(self):
-        return self.name
-    
+        return f"Result #{self.pk} (race={self.race_event_id}, place={self.place})"
+
 class Bids(models.Model):
     race_event = models.ForeignKey(RaceEvent, on_delete=models.CASCADE, related_name='bids')
     bidder = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bids')
@@ -85,4 +86,4 @@ class Bids(models.Model):
         db_table = 'race_bids'
 
     def __str__(self):
-        return self.name
+        return f"Bid #{self.pk} ({self.amount} on race {self.race_event_id})"

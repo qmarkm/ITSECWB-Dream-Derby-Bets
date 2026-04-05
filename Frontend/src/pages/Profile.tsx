@@ -24,8 +24,8 @@ const Profile: React.FC = () => {
   const [bidsLoading, setBidsLoading] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editedUsername, setEditedUsername] = useState(user?.username || "");
-  const [editedEmail, setEditedEmail] = useState(user?.email || "");
+  const [editedUsername, setEditedUsername] = useState("");
+  const [editedEmail, setEditedEmail] = useState("");
 
   useEffect(() => {
     if (user) {
@@ -34,6 +34,14 @@ const Profile: React.FC = () => {
       getMyBids().then(setBids).catch(() => {}).finally(() => setBidsLoading(false));
     }
   }, [user, fetchMyUmas]);
+
+  // useState only runs initial values once; user is often null on first render while auth loads.
+  useEffect(() => {
+    if (user && !isEditing) {
+      setEditedUsername(user.username);
+      setEditedEmail(user.email);
+    }
+  }, [user, isEditing]);
 
   if (isLoading || isLoadingUmas) {
   return (
@@ -168,7 +176,15 @@ const Profile: React.FC = () => {
                 <CardDescription>Manage your account information</CardDescription>
               </div>
               {!isEditing ? (
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditedUsername(user.username);
+                    setEditedEmail(user.email);
+                    setIsEditing(true);
+                  }}
+                >
                   <Edit2 className="h-4 w-4 mr-2" />
                   Edit
                 </Button>

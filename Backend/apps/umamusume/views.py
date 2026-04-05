@@ -25,6 +25,69 @@ from .serializers import (
 )
 
 
+def _build_umamusume_request_data(request, user_id, *, partial):
+    """
+    Parse multipart form (POST + FILES) for UmamusumeCreateSerializer.
+    If partial=False (create), default skill_ids to [] when omitted.
+    If partial=True (update), omit skill_ids when not in POST so skills are unchanged.
+    """
+    data = {}
+    avatar_file = request.FILES.get('avatar')
+    avatar_url = None
+
+    if avatar_file:
+        allowed_extensions = ['.png', '.gif']
+        file_extension = os.path.splitext(avatar_file.name)[1].lower()
+
+        if file_extension not in allowed_extensions:
+            return None, Response(
+                {'error': 'Invalid file type. Only PNG and GIF allowed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_size = 5 * 1024 * 1024
+        if avatar_file.size > max_size:
+            return None, Response(
+                {'error': 'File too large. Maximum size is 5MB.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        timestamp = int(time.time())
+        filename = f"uma_{user_id}_{timestamp}{file_extension}"
+        filepath = os.path.join('umamusume_avatars', filename)
+        saved_path = default_storage.save(filepath, avatar_file)
+        avatar_url = request.build_absolute_uri(f"{settings.MEDIA_URL}{saved_path}")
+
+    for key in request.POST.keys():
+        if key not in ('skill_ids', 'aptitudes'):
+            data[key] = request.POST.get(key)
+
+    if avatar_url:
+        data['avatar_url'] = avatar_url
+
+    if 'skill_ids' in request.POST:
+        skill_ids_raw = request.POST.getlist('skill_ids')
+        try:
+            data['skill_ids'] = [int(i) for i in skill_ids_raw if i and i.strip()]
+        except (ValueError, TypeError):
+            data['skill_ids'] = []
+    elif not partial:
+        data['skill_ids'] = []
+
+    if 'aptitudes' in request.POST:
+        aptitudes_str = request.POST.get('aptitudes')
+        if aptitudes_str:
+            try:
+                data['aptitudes'] = json.loads(aptitudes_str)
+            except json.JSONDecodeError:
+                return None, Response(
+                    {'error': 'Invalid aptitudes format.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+    return data, None
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def index(request):
@@ -402,52 +465,10 @@ def import_umas_csv(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_umamusume(request):
-    avatar_file = None
     try:
-        avatar_file = request.FILES.get('avatar')
-        avatar_url = None
-
-        if avatar_file:
-            allowed_extensions = ['.png', '.gif']
-            file_extension = os.path.splitext(avatar_file.name)[1].lower()
-
-            if file_extension not in allowed_extensions:
-                return Response({'error': 'Invalid file type. Only PNG and GIF allowed.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            max_size = 5 * 1024 * 1024
-            if avatar_file.size > max_size:
-                return Response({'error': 'File too large. Maximum size is 5MB.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            timestamp = int(time.time())
-            filename = f"uma_{request.user.id}_{timestamp}{file_extension}"
-            filepath = os.path.join('umamusume_avatars', filename)
-            saved_path = default_storage.save(filepath, avatar_file)
-            avatar_url = request.build_absolute_uri(f"{settings.MEDIA_URL}{saved_path}")
-
-        data = {}
-        for key in request.POST.keys():
-            if key not in ['skill_ids', 'aptitudes']:
-                data[key] = request.POST.get(key)
-
-        if avatar_url:
-            data['avatar_url'] = avatar_url
-
-        if 'skill_ids' in request.POST:
-            skill_ids_raw = request.POST.getlist('skill_ids')
-            try:
-                data['skill_ids'] = [int(i) for i in skill_ids_raw if i and i.strip()]
-            except (ValueError, TypeError):
-                data['skill_ids'] = []
-        else:
-            data['skill_ids'] = []
-
-        if 'aptitudes' in request.POST:
-            aptitudes_str = request.POST.get('aptitudes')
-            if aptitudes_str:
-                try:
-                    data['aptitudes'] = json.loads(aptitudes_str)
-                except json.JSONDecodeError:
-                    return Response({'error': 'Invalid aptitudes format.'}, status=status.HTTP_400_BAD_REQUEST)
+        data, err = _build_umamusume_request_data(request, request.user.id, partial=False)
+        if err:
+            return err
 
         serializer = UmamusumeCreateSerializer(data=data)
         if serializer.is_valid():
@@ -470,7 +491,15 @@ def update_umamusume(request, id):
         if umamusume.user != request.user:
             return Response({'error': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = UmamusumeCreateSerializer(umamusume, data=request.data, partial=True)
+        ct = request.content_type or ''
+        if 'multipart/form-data' in ct:
+            data, err = _build_umamusume_request_data(request, request.user.id, partial=True)
+            if err:
+                return err
+        else:
+            data = request.data
+
+        serializer = UmamusumeCreateSerializer(umamusume, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(UmamusumeSerializer(umamusume).data)

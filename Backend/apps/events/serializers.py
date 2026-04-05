@@ -1,8 +1,40 @@
 import re
+from decimal import Decimal
 
+from django.db import transaction
 from rest_framework import serializers
 from .models import Track, RaceEvent, Results, Bids
 from ..umamusume.serializers import UmamusumeSerializer
+
+# Align with users app balance transaction cap
+MAX_BID_AMOUNT = Decimal('1000000')
+
+_RACE_STATUS_ORDER = (
+    RaceEvent.Status.scheduled,
+    RaceEvent.Status.open,
+    RaceEvent.Status.active,
+    RaceEvent.Status.race_ongoing,
+    RaceEvent.Status.completed,
+)
+
+
+def _race_status_index(status):
+    try:
+        return _RACE_STATUS_ORDER.index(status)
+    except ValueError:
+        return -1
+
+
+def _validate_race_datetimes(*, opening_dt, active_dt, race_start_dt, race_end_dt):
+    sequence = [opening_dt, active_dt, race_start_dt, race_end_dt]
+    present = [dt for dt in sequence if dt is not None]
+    for i in range(len(present) - 1):
+        if present[i] > present[i + 1]:
+            raise serializers.ValidationError(
+                'Race datetimes must be non-decreasing in this order: '
+                'opening_dt → active_dt → race_start_dt → race_end_dt.'
+            )
+
 
 _HTML_PATTERN = re.compile(r'<[^>]+>')
 _XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
@@ -127,6 +159,15 @@ class RaceEventCreateSerializer(serializers.ModelSerializer):
             'race_end_dt': {'required': False, 'allow_null': True},
         }
 
+    def validate(self, data):
+        _validate_race_datetimes(
+            opening_dt=data.get('opening_dt'),
+            active_dt=data.get('active_dt'),
+            race_start_dt=data.get('race_start_dt'),
+            race_end_dt=data.get('race_end_dt'),
+        )
+        return data
+
     def create(self, validated_data):
         validated_data['host'] = self.context['request'].user
         validated_data.setdefault('status', RaceEvent.Status.scheduled)
@@ -147,6 +188,32 @@ class RaceEventUpdateSerializer(serializers.ModelSerializer):
             'race_start_dt': {'required': False, 'allow_null': True},
             'race_end_dt': {'required': False, 'allow_null': True},
         }
+
+    def validate(self, data):
+        inst = self.instance
+        opening_dt = data.get('opening_dt', inst.opening_dt)
+        active_dt = data.get('active_dt', inst.active_dt)
+        race_start_dt = data.get('race_start_dt', inst.race_start_dt)
+        race_end_dt = data.get('race_end_dt', inst.race_end_dt)
+        _validate_race_datetimes(
+            opening_dt=opening_dt,
+            active_dt=active_dt,
+            race_start_dt=race_start_dt,
+            race_end_dt=race_end_dt,
+        )
+
+        if 'status' in data and data['status'] != inst.status:
+            old_status = inst.status
+            new_status = data['status']
+            if old_status == RaceEvent.Status.completed:
+                raise serializers.ValidationError({
+                    'status': 'Cannot change status of a completed race.',
+                })
+            if _race_status_index(new_status) < _race_status_index(old_status):
+                raise serializers.ValidationError({
+                    'status': 'Cannot revert race status to an earlier phase.',
+                })
+        return data
 
 
 class RaceResultInputSerializer(serializers.Serializer):
@@ -215,6 +282,10 @@ class BidsCreateSerializer(serializers.ModelSerializer):
     def validate_amount(self, value):
         if value <= 0:
             raise serializers.ValidationError("Bet amount must be greater than zero.")
+        if value > MAX_BID_AMOUNT:
+            raise serializers.ValidationError(
+                f"Bet amount cannot exceed {MAX_BID_AMOUNT} coins."
+            )
         return value
 
     def validate(self, data):
@@ -236,6 +307,11 @@ class BidsCreateSerializer(serializers.ModelSerializer):
             )
 
         uma = data.get('uma')
+        participant_count = race_event.results.count()
+        if participant_count > 0 and uma is None:
+            raise serializers.ValidationError(
+                {"uma": "Select a runner to bet on."}
+            )
         if uma is not None and uma.race_event != race_event:
             raise serializers.ValidationError(
                 {"uma": "The selected umamusume is not participating in this race."}
@@ -243,6 +319,7 @@ class BidsCreateSerializer(serializers.ModelSerializer):
 
         return data
 
+    @transaction.atomic
     def create(self, validated_data):
         request = self.context['request']
         race_event = self.context['race_event']
@@ -272,6 +349,10 @@ class BidsUpdateSerializer(serializers.ModelSerializer):
     def validate_amount(self, value):
         if value <= 0:
             raise serializers.ValidationError("Bet amount must be greater than zero.")
+        if value > MAX_BID_AMOUNT:
+            raise serializers.ValidationError(
+                f"Bet amount cannot exceed {MAX_BID_AMOUNT} coins."
+            )
         return value
 
     def validate(self, data):
@@ -295,6 +376,7 @@ class BidsUpdateSerializer(serializers.ModelSerializer):
 
         return data
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         if 'amount' in validated_data:
             new_amount = validated_data['amount']
