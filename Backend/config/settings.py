@@ -14,6 +14,7 @@ from pathlib import Path
 from decouple import Config, RepositoryEnv
 from datetime import timedelta
 from urllib.parse import urlparse, unquote
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -276,3 +277,103 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
 ]
+
+# ---------------------------------------------------------------------------
+# Logging
+# LOG_DIR defaults to Backend/logs/ for development.
+# In production set LOG_DIR=/var/log/derby-bets in .env
+# ---------------------------------------------------------------------------
+LOG_DIR = config('LOG_DIR', default=str(BASE_DIR / 'logs'))
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Remote syslog server — DB values take priority over .env so the admin
+# panel can override them. Falls back to .env on first boot before DB is ready.
+SYSLOG_HOST = config('SYSLOG_HOST', default='')
+SYSLOG_PORT = config('SYSLOG_PORT', default=514, cast=int)
+
+try:
+    from apps.users.models import SystemSettings as _SS
+    _db_host = _SS.get_setting('SYSLOG_HOST', None)
+    _db_port = _SS.get_setting('SYSLOG_PORT', None)
+    if _db_host is not None:
+        SYSLOG_HOST = _db_host
+    if _db_port is not None:
+        SYSLOG_PORT = int(_db_port)
+except Exception:
+    pass  # DB not ready yet (migrations, first run) — use .env values
+
+# Build handler list for the security logger dynamically
+_security_handlers = ['security_file', 'console']
+if SYSLOG_HOST:
+    _security_handlers.append('syslog_remote')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'security': {
+            'format': '{asctime} | {levelname} | {name} | {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%dT%H:%M:%S%z',
+        },
+        'verbose': {
+            'format': '{asctime} | {levelname} | {name} | {module} | {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%dT%H:%M:%S%z',
+        },
+        # Syslog format: plain message — rsyslog adds its own timestamp/host
+        'syslog': {
+            'format': 'derby-bets: {levelname} | {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'security_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOG_DIR, 'security.log'),
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB per file
+            'backupCount': 30,
+            'formatter': 'security',
+            'encoding': 'utf-8',
+        },
+        'app_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOG_DIR, 'app.log'),
+            'maxBytes': 10 * 1024 * 1024,
+            'backupCount': 10,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        # Remote syslog handler — only active when SYSLOG_HOST is set
+        'syslog_remote': {
+            'class': 'logging.handlers.SysLogHandler',
+            'address': (SYSLOG_HOST, SYSLOG_PORT),
+            'facility': 'local0',
+            'formatter': 'syslog',
+        },
+    },
+    'loggers': {
+        # Security events: login failures, lockouts, unlocks, logouts
+        'security': {
+            'handlers': _security_handlers,
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # General Django warnings/errors
+        'django': {
+            'handlers': ['app_file', 'console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Unhandled request errors (caught by exception_handler.py)
+        'django.request': {
+            'handlers': ['app_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+    },
+}

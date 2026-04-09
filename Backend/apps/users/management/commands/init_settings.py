@@ -19,6 +19,19 @@ class Command(BaseCommand):
             description='Warning display before timeout in minutes (1-10)'
         )
 
+        # Remote syslog / logging server settings
+        SystemSettings.set_setting(
+            key='SYSLOG_HOST',
+            value='',
+            description='Remote syslog server IP or hostname (leave empty to disable remote logging)'
+        )
+
+        SystemSettings.set_setting(
+            key='SYSLOG_PORT',
+            value='514',
+            description='Remote syslog server UDP port (default: 514)'
+        )
+
         self.stdout.write(
             self.style.SUCCESS('Successfully initialized system settings')
         )

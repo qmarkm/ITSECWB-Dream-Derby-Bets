@@ -26,6 +26,8 @@ from apps.users.views import (
     CustomTokenObtainPairView,
     get_session_settings,
     manage_system_settings,
+    get_security_logs,
+    delete_security_logs,
 )
 
 urlpatterns = [
@@ -39,6 +41,8 @@ urlpatterns = [
     # Session timeout settings
     path('api/settings/session/', get_session_settings, name='get_session_settings'),
     path('api/admin/settings/', manage_system_settings, name='manage_system_settings'),
+    path('api/admin/logs/', get_security_logs, name='get_security_logs'),
+    path('api/admin/logs/delete/', delete_security_logs, name='delete_security_logs'),
 
     # API endpoints (add these after you create your apps)
     path('api/users/', include('apps.users.urls')),
