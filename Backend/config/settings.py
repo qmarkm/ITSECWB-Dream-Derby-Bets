@@ -302,10 +302,20 @@ try:
 except Exception:
     pass  # DB not ready yet (migrations, first run) — use .env values
 
-# Build handler list for the security logger dynamically
+# Build handler list and handler dict dynamically.
+# syslog_remote is only defined when SYSLOG_HOST is non-empty — defining it
+# with an empty host causes SysLogHandler to call socket.getaddrinfo('', 514)
+# at Django startup which raises ValueError and crashes migrations/gunicorn.
 _security_handlers = ['security_file', 'console']
+_extra_handlers = {}
 if SYSLOG_HOST:
     _security_handlers.append('syslog_remote')
+    _extra_handlers['syslog_remote'] = {
+        'class': 'logging.handlers.SysLogHandler',
+        'address': (SYSLOG_HOST, SYSLOG_PORT),
+        'facility': 'local0',
+        'formatter': 'syslog',
+    }
 
 LOGGING = {
     'version': 1,
@@ -348,13 +358,7 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
-        # Remote syslog handler — only active when SYSLOG_HOST is set
-        'syslog_remote': {
-            'class': 'logging.handlers.SysLogHandler',
-            'address': (SYSLOG_HOST, SYSLOG_PORT),
-            'facility': 'local0',
-            'formatter': 'syslog',
-        },
+        **_extra_handlers,
     },
     'loggers': {
         # Security events: login failures, lockouts, unlocks, logouts
