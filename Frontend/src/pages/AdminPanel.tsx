@@ -25,6 +25,22 @@ import { toast } from "sonner";
 import { getSystemSettings, updateSystemSettings, updateLoggingSettings, getSecurityLogs, deleteSecurityLogs } from "@/services/settingsService";
 import type { LogEntry } from "@/services/settingsService";
 
+/** Convert a `datetime-local` value (local time) to a UTC ISO string for the API. */
+const localToUtcIso = (v: string): string | null => {
+  if (!v) return null;
+  return new Date(v).toISOString();            // "2026-04-10T14:30" → "2026-04-10T06:30:00.000Z"
+};
+
+/** Convert a UTC ISO string from the API to a `datetime-local` value (local time). */
+const utcToLocalInput = (iso: string | null | undefined): string => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  // datetime-local expects "YYYY-MM-DDTHH:mm"
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const AdminPanel: React.FC = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated, login } = useAuth();
@@ -2044,7 +2060,7 @@ const AdminPanel: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="t-distance">Distance</Label>
-                          <Input id="t-distance" value={trackForm.distance || ""} onChange={(e) => setTrackForm({ ...trackForm, distance: e.target.value })} placeholder="e.g. 1600m" />
+                          <Input id="t-distance" type="number" min="0" value={trackForm.distance || ""} onChange={(e) => setTrackForm({ ...trackForm, distance: e.target.value.replace(/\D/g, '') })} placeholder="e.g. 1600" />
                         </div>
                         <div className="space-y-1">
                           <Label>Category</Label>
@@ -2182,8 +2198,8 @@ const AdminPanel: React.FC = () => {
                           <Input
                             id="r-opening"
                             type="datetime-local"
-                            value={raceForm.opening_dt?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceForm({ ...raceForm, opening_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceForm.opening_dt)}
+                            onChange={(e) => setRaceForm({ ...raceForm, opening_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="space-y-1">
@@ -2191,8 +2207,8 @@ const AdminPanel: React.FC = () => {
                           <Input
                             id="r-active"
                             type="datetime-local"
-                            value={raceForm.active_dt?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceForm({ ...raceForm, active_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceForm.active_dt)}
+                            onChange={(e) => setRaceForm({ ...raceForm, active_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="space-y-1">
@@ -2200,8 +2216,8 @@ const AdminPanel: React.FC = () => {
                           <Input
                             id="r-start"
                             type="datetime-local"
-                            value={raceForm.race_start_dt?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceForm({ ...raceForm, race_start_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceForm.race_start_dt)}
+                            onChange={(e) => setRaceForm({ ...raceForm, race_start_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="space-y-1">
@@ -2209,8 +2225,8 @@ const AdminPanel: React.FC = () => {
                           <Input
                             id="r-end"
                             type="datetime-local"
-                            value={raceForm.race_end_dt?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceForm({ ...raceForm, race_end_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceForm.race_end_dt)}
+                            onChange={(e) => setRaceForm({ ...raceForm, race_end_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="flex items-center gap-2 pt-5">
@@ -2332,32 +2348,32 @@ const AdminPanel: React.FC = () => {
                           <Label>Opening Date</Label>
                           <Input
                             type="datetime-local"
-                            value={(raceEditForm.opening_dt ?? editingRace.opening_dt)?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceEditForm({ ...raceEditForm, opening_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceEditForm.opening_dt ?? editingRace.opening_dt)}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, opening_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="space-y-1">
                           <Label>Active Date</Label>
                           <Input
                             type="datetime-local"
-                            value={(raceEditForm.active_dt ?? editingRace.active_dt)?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceEditForm({ ...raceEditForm, active_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceEditForm.active_dt ?? editingRace.active_dt)}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, active_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="space-y-1">
                           <Label>Race Start</Label>
                           <Input
                             type="datetime-local"
-                            value={(raceEditForm.race_start_dt ?? editingRace.race_start_dt)?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceEditForm({ ...raceEditForm, race_start_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceEditForm.race_start_dt ?? editingRace.race_start_dt)}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, race_start_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="space-y-1">
                           <Label>Race End</Label>
                           <Input
                             type="datetime-local"
-                            value={(raceEditForm.race_end_dt ?? editingRace.race_end_dt)?.slice(0, 16) ?? ""}
-                            onChange={(e) => setRaceEditForm({ ...raceEditForm, race_end_dt: e.target.value ? e.target.value + ':00Z' : null })}
+                            value={utcToLocalInput(raceEditForm.race_end_dt ?? editingRace.race_end_dt)}
+                            onChange={(e) => setRaceEditForm({ ...raceEditForm, race_end_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
                         <div className="flex items-center gap-2 pt-5">
@@ -2479,7 +2495,7 @@ const AdminPanel: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="et-distance">Distance</Label>
-                          <Input id="et-distance" value={trackForm.distance || ""} onChange={(e) => setTrackForm({ ...trackForm, distance: e.target.value })} placeholder="e.g. 1600m" />
+                          <Input id="et-distance" type="number" min="0" value={trackForm.distance || ""} onChange={(e) => setTrackForm({ ...trackForm, distance: e.target.value.replace(/\D/g, '') })} placeholder="e.g. 1600" />
                         </div>
                         <div className="space-y-1">
                           <Label>Category</Label>

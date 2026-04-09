@@ -20,6 +20,10 @@ _RACE_STATUS_ORDER = (
 _HTML_PATTERN = re.compile(r'<[^>]+>')
 _XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
 _VALID_URL_SCHEMES = ('http://', 'https://')
+_NUMERIC_ONLY = re.compile(r'^\d+$')
+_ISO8601_DT = re.compile(
+    r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?$'
+)
 
 
 def _race_status_index(status):
@@ -100,10 +104,12 @@ class TrackWriteSerializer(serializers.ModelSerializer):
             if not value:
                 return value
             value = value.strip()
+            if not _NUMERIC_ONLY.match(value):
+                raise serializers.ValidationError("Distance must be a number (e.g. 1600).")
+            if int(value) <= 0:
+                raise serializers.ValidationError("Distance must be greater than zero.")
             if len(value) > 10:
                 raise serializers.ValidationError("Distance is too long.")
-            if _HTML_PATTERN.search(value) or _XSS_PATTERN.search(value):
-                raise serializers.ValidationError("Distance contains invalid characters.")
             return value
         except serializers.ValidationError:
             raise
@@ -192,8 +198,19 @@ class RaceEventCreateSerializer(serializers.ModelSerializer):
             'race_end_dt': {'required': False, 'allow_null': True},
         }
 
+    def _validate_dt_format(self, value, field_name):
+        """Reject raw datetime strings that don't look like ISO 8601."""
+        raw = self.initial_data.get(field_name)
+        if raw is not None and isinstance(raw, str) and raw.strip():
+            if not _ISO8601_DT.match(raw.strip()):
+                raise serializers.ValidationError({
+                    field_name: 'Invalid datetime format. Use ISO 8601 (e.g. 2025-06-01T14:00:00Z).'
+                })
+
     def validate(self, data):
         try:
+            for field in ('opening_dt', 'active_dt', 'race_start_dt', 'race_end_dt'):
+                self._validate_dt_format(data.get(field), field)
             _validate_race_datetimes(
                 opening_dt=data.get('opening_dt'),
                 active_dt=data.get('active_dt'),
@@ -236,8 +253,18 @@ class RaceEventUpdateSerializer(serializers.ModelSerializer):
             'race_end_dt': {'required': False, 'allow_null': True},
         }
 
+    def _validate_dt_format(self, value, field_name):
+        raw = self.initial_data.get(field_name)
+        if raw is not None and isinstance(raw, str) and raw.strip():
+            if not _ISO8601_DT.match(raw.strip()):
+                raise serializers.ValidationError({
+                    field_name: 'Invalid datetime format. Use ISO 8601 (e.g. 2025-06-01T14:00:00Z).'
+                })
+
     def validate(self, data):
         try:
+            for field in ('opening_dt', 'active_dt', 'race_start_dt', 'race_end_dt'):
+                self._validate_dt_format(data.get(field), field)
             inst = self.instance
             _validate_race_datetimes(
                 opening_dt=data.get('opening_dt', inst.opening_dt),
@@ -255,6 +282,19 @@ class RaceEventUpdateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         'status': 'Invalid status transition.'
                     })
+                # Opening bets requires runners from at least 2 different users
+                if (inst.status == RaceEvent.Status.scheduled
+                        and data['status'] == RaceEvent.Status.open):
+                    distinct_owners = (
+                        inst.results
+                        .values_list('umamusume__user', flat=True)
+                        .distinct()
+                        .count()
+                    )
+                    if distinct_owners < 2:
+                        raise serializers.ValidationError({
+                            'status': 'At least 2 runners from different users must be enrolled before opening bets.'
+                        })
             return data
         except serializers.ValidationError:
             raise

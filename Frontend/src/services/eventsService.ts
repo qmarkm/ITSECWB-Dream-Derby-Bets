@@ -30,8 +30,14 @@ export interface RaceParticipant {
     umamusume_data: {
         id: number;
         name: string;
-        image: string | null;
-    };
+        avatar_url: string | null;
+        speed: number;
+        stamina: number;
+        power: number;
+        guts: number;
+        wit: number;
+        user_username: string;
+    } | null;
     place: number | null;
 }
 
