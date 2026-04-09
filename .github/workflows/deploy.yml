@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code
+        run: |
+          cd /home/dreamderby/app
+          sudo -u dreamderby git pull origin main
+
+      - name: Install Python dependencies
+        run: |
+          cd /home/dreamderby/app/Backend
+          sudo -u dreamderby /home/dreamderby/app/Backend/venv/bin/pip install -r requirements.txt --quiet
+
+      - name: Run migrations
+        run: |
+          cd /home/dreamderby/app/Backend
+          sudo -u dreamderby /home/dreamderby/app/Backend/venv/bin/python manage.py migrate --noinput
+
+      - name: Collect static files
+        run: |
+          cd /home/dreamderby/app/Backend
+          sudo -u dreamderby /home/dreamderby/app/Backend/venv/bin/python manage.py collectstatic --noinput
+
+      - name: Build frontend
+        run: |
+          cd /home/dreamderby/app/Frontend
+          sudo -u dreamderby npm install --quiet
+          sudo -u dreamderby npm run build
+
+      - name: Deploy frontend build
+        run: |
+          sudo cp -r /home/dreamderby/app/Frontend/dist/ /var/www/dream-derby/dist/
+          sudo chown -R www-data:www-data /var/www/dream-derby
+
+      - name: Restart Gunicorn
+        run: sudo systemctl restart gunicorn-dreamderby
