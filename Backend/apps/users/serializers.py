@@ -71,6 +71,12 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
             'avatar_url',
             'favorite_umamusume',
         ]
+        read_only_fields = [
+            'bio',
+            'avatar',
+            'avatar_url',
+            'favorite_umamusume',
+        ]
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
@@ -119,7 +125,18 @@ class UserSerializer(serializers.ModelSerializer):
             'date_joined',
             'profile',
         ]
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'phone_number',
+            'is_active',
+            'is_staff',
+            'is_superuser',
+            'date_joined',
+            'profile',
+        ]
 
 
 class PublicUserSerializer(serializers.ModelSerializer):
@@ -137,7 +154,12 @@ class PublicUserSerializer(serializers.ModelSerializer):
             'date_joined',
             'profile',
         ]
-        read_only_fields = ['date_joined']
+        read_only_fields = [
+            'username', 
+            'full_name', 
+            'date_joined', 
+            'profile'
+        ]
 
 
 class CurrentUserSerializer(serializers.ModelSerializer):
@@ -158,7 +180,14 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             'date_joined',
             'profile',
         ]
-        read_only_fields = ['date_joined']
+        read_only_fields = [
+            'id', 
+            'username', 
+            'email', 
+            'full_name', 
+            'date_joined', 
+            'profile'
+        ]
 
 
 class AdminUserReadSerializer(serializers.ModelSerializer):

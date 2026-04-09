@@ -56,7 +56,7 @@ class TrackSerializer(serializers.ModelSerializer):
     class Meta:
         model = Track
         fields = ['id', 'name', 'image', 'image_url', 'distance', 'dist_category', 'direction', 'track_type']
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'name', 'image', 'image_url', 'distance', 'dist_category', 'direction', 'track_type']
 
     def get_image_url(self, obj):
         if obj.image and hasattr(obj.image, 'url'):
@@ -132,6 +132,7 @@ class ResultsWithUmaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Results
         fields = ['id', 'umamusume', 'umamusume_data', 'place']
+        read_only_fields = ['id', 'umamusume', 'umamusume_data', 'place']
 
 
 class RaceEventSerializer(serializers.ModelSerializer):
@@ -149,7 +150,12 @@ class RaceEventSerializer(serializers.ModelSerializer):
             'race_start_dt', 'race_end_dt',
             'umas', 'bid_count', 'track', 'track_name', 'participants',
         ]
-        read_only_fields = ['id']
+        read_only_fields = [
+            'id', 'created_at', 'host', 'host_username', 'status',
+            'opening_dt', 'is_published', 'active_dt',
+            'race_start_dt', 'race_end_dt',
+            'umas', 'bid_count', 'track', 'track_name', 'participants',
+        ]
 
     def get_umas(self, obj):
         try:
@@ -315,7 +321,7 @@ class ResultsSerializer(serializers.ModelSerializer):
     class Meta:
         model = Results
         fields = ['id', 'race_event', 'umamusume', 'place']
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'race_event', 'umamusume', 'place']
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +345,7 @@ class BidsSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'bidder', 'bidder_username',
             'race_event', 'race_event_status', 'race_track_name',
-            'umamusume_name', 'created_at',
+            'umamusume_name', 'created_at', 'amount', 'uma'
         ]
 
     def get_race_track_name(self, obj):

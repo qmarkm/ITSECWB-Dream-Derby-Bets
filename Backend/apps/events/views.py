@@ -273,21 +273,24 @@ def set_race_results(request, id):
                     id=entry['result_id'], race_event=race_locked
                 ).update(place=entry['place'])
 
-            # 2. Payout: x2 for bets on 1st place, x0.5 consolation for the rest
-            from ..users.models import UserProfile
+            from ..users.models import UserProfile, SystemSettings
             winning_result_id = next(
                 e['result_id'] for e in updates if e['place'] == 1
             )
             bids = race_locked.bids.select_related('bidder__profile', 'uma').all()
+            
+            winning_multiplier = Decimal(str(SystemSettings.get_setting('WINNING_MULTIPLIER', '2.0')))
+            consolation_multiplier = Decimal(str(SystemSettings.get_setting('CONSOLATION_MULTIPLIER', '0.5')))
+            
             for bid in bids:
                 profile = UserProfile.objects.select_for_update().get(pk=bid.bidder.profile.pk)
                 if bid.uma_id == winning_result_id:
-                    payout = bid.amount * 2
+                    payout = bid.amount * winning_multiplier
                     profile.balance += payout
                     profile.total_bets_won += 1
                     profile.total_winnings += payout
                 else:
-                    consolation = bid.amount * Decimal('0.5')
+                    consolation = bid.amount * consolation_multiplier
                     profile.balance += consolation
                     profile.total_bets_lost += 1
                     profile.total_losses += bid.amount - consolation

@@ -8,6 +8,11 @@ export interface SessionSettings {
 export interface SystemSettings {
   timeout_minutes: number;
   warning_minutes: number;
+  max_login_attempts?: number;
+  lockout_duration_minutes?: number;
+  initial_balance?: string;
+  winning_multiplier?: string;
+  consolation_multiplier?: string;
 }
 
 export interface LoggingSettings {

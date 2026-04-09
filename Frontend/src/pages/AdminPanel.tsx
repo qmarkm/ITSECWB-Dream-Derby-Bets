@@ -133,6 +133,17 @@ const AdminPanel: React.FC = () => {
   const [sessionWarning, setSessionWarning] = useState(5);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
 
+  // Security configs
+  const [maxLoginAttempts, setMaxLoginAttempts] = useState(5);
+  const [lockoutDuration, setLockoutDuration] = useState(15);
+  const [isSavingSecurity, setIsSavingSecurity] = useState(false);
+
+  // Gameplay configs
+  const [initialBalance, setInitialBalance] = useState("5000.00");
+  const [winningMultiplier, setWinningMultiplier] = useState("2.0");
+  const [consolationMultiplier, setConsolationMultiplier] = useState("0.5");
+  const [isSavingGameplay, setIsSavingGameplay] = useState(false);
+
   // Logging server settings
   const [syslogHost, setSyslogHost] = useState('');
   const [syslogPort, setSyslogPort] = useState(514);
@@ -272,11 +283,23 @@ const AdminPanel: React.FC = () => {
           const warningSetting = data.settings.find(s => s.setting_key === 'SESSION_WARNING_MINUTES');
           const syslogHostSetting = data.settings.find(s => s.setting_key === 'SYSLOG_HOST');
           const syslogPortSetting = data.settings.find(s => s.setting_key === 'SYSLOG_PORT');
+          
+          const maxLoginSetting = data.settings.find(s => s.setting_key === 'MAX_LOGIN_ATTEMPTS');
+          const lockoutSetting = data.settings.find(s => s.setting_key === 'LOCKOUT_DURATION_MINUTES');
+          const initBalSetting = data.settings.find(s => s.setting_key === 'INITIAL_BALANCE');
+          const winMultSetting = data.settings.find(s => s.setting_key === 'WINNING_MULTIPLIER');
+          const consMultSetting = data.settings.find(s => s.setting_key === 'CONSOLATION_MULTIPLIER');
 
           if (timeoutSetting) setSessionTimeout(parseInt(timeoutSetting.setting_value));
           if (warningSetting) setSessionWarning(parseInt(warningSetting.setting_value));
           if (syslogHostSetting) setSyslogHost(syslogHostSetting.setting_value);
           if (syslogPortSetting) setSyslogPort(parseInt(syslogPortSetting.setting_value) || 514);
+          
+          if (maxLoginSetting) setMaxLoginAttempts(parseInt(maxLoginSetting.setting_value) || 5);
+          if (lockoutSetting) setLockoutDuration(parseInt(lockoutSetting.setting_value) || 15);
+          if (initBalSetting) setInitialBalance(initBalSetting.setting_value);
+          if (winMultSetting) setWinningMultiplier(winMultSetting.setting_value);
+          if (consMultSetting) setConsolationMultiplier(consMultSetting.setting_value);
         } catch (error) {
           console.error('Failed to fetch settings:', error);
         }
@@ -878,6 +901,47 @@ const AdminPanel: React.FC = () => {
       toast.error(error.response?.data?.error || 'Failed to update settings');
     } finally {
       setIsLoadingSettings(false);
+    }
+  };
+
+  const handleSaveSecuritySettings = async () => {
+    if (maxLoginAttempts < 1) { toast.error('Max login attempts must be at least 1'); return; }
+    if (lockoutDuration < 1) { toast.error('Lockout duration must be at least 1 minute'); return; }
+    
+    setIsSavingSecurity(true);
+    try {
+      await updateSystemSettings({
+        max_login_attempts: maxLoginAttempts,
+        lockout_duration_minutes: lockoutDuration,
+      });
+      toast.success('Security settings updated securely.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to update security settings');
+    } finally {
+      setIsSavingSecurity(false);
+    }
+  };
+
+  const handleSaveGameplaySettings = async () => {
+    const bal = parseFloat(initialBalance);
+    const win = parseFloat(winningMultiplier);
+    const cons = parseFloat(consolationMultiplier);
+    if (isNaN(bal) || bal < 0) { toast.error('Check initial balance amount.'); return; }
+    if (isNaN(win) || win < 0) { toast.error('Check winning multiplier amount.'); return; }
+    if (isNaN(cons) || cons < 0) { toast.error('Check consolation multiplier amount.'); return; }
+    
+    setIsSavingGameplay(true);
+    try {
+      await updateSystemSettings({
+        initial_balance: initialBalance,
+        winning_multiplier: winningMultiplier,
+        consolation_multiplier: consolationMultiplier,
+      });
+      toast.success('Gameplay configurations saved.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to update gameplay settings');
+    } finally {
+      setIsSavingGameplay(false);
     }
   };
 
@@ -2706,6 +2770,100 @@ const AdminPanel: React.FC = () => {
 
                   <Button onClick={handleSaveSessionSettings} disabled={isLoadingSettings}>
                     {isLoadingSettings ? 'Saving...' : 'Save Settings'}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Gameplay Configurations */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Gameplay Configurations</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Manage betting economics and initial account setups
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="initBal">Starting Balance</Label>
+                      <Input
+                        id="initBal"
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={initialBalance}
+                        onChange={(e) => setInitialBalance(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="winMult">Winning Payout (1st Place)</Label>
+                      <Input
+                        id="winMult"
+                        type="number"
+                        min="1.0"
+                        step="0.1"
+                        value={winningMultiplier}
+                        onChange={(e) => setWinningMultiplier(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="consMult">Consolation Payout</Label>
+                      <Input
+                        id="consMult"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={consolationMultiplier}
+                        onChange={(e) => setConsolationMultiplier(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <Button onClick={handleSaveGameplaySettings} disabled={isSavingGameplay} variant="default">
+                    {isSavingGameplay ? 'Saving...' : 'Save Gameplay Settings'}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Security Configurations */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-indigo-500" />
+                    Security Controls
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Manage login limitations and brute-force protections
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="maxLogin">Max Login Attempts</Label>
+                      <Input
+                        id="maxLogin"
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={maxLoginAttempts}
+                        onChange={(e) => setMaxLoginAttempts(parseInt(e.target.value) || 1)}
+                      />
+                      <p className="text-xs text-muted-foreground">Failures before an account is locked.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="lockoutDur">Lockout Duration (mins)</Label>
+                      <Input
+                        id="lockoutDur"
+                        type="number"
+                        min="1"
+                        max="1440"
+                        value={lockoutDuration}
+                        onChange={(e) => setLockoutDuration(parseInt(e.target.value) || 1)}
+                      />
+                      <p className="text-xs text-muted-foreground">Time before the account automatically unlocks.</p>
+                    </div>
+                  </div>
+                  <Button onClick={handleSaveSecuritySettings} disabled={isSavingSecurity} variant="default">
+                    {isSavingSecurity ? 'Saving...' : 'Save Security Settings'}
                   </Button>
                 </CardContent>
               </Card>
