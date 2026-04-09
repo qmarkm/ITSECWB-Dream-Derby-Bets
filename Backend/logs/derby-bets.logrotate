@@ -1,0 +1,20 @@
+# logrotate config for Dream Derby Bets
+# Deploy with: sudo cp derby-bets.logrotate /etc/logrotate.d/derby-bets
+#
+# This assumes LOG_DIR=/var/log/derby-bets in production .env
+# For dev (Backend/logs/), logrotate is not needed — RotatingFileHandler handles it.
+
+/var/log/derby-bets/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        # Signal gunicorn to reopen log file handles after rotation
+        systemctl reload gunicorn 2>/dev/null || true
+    endscript
+}

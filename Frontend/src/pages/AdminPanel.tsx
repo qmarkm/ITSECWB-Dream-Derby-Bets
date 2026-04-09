@@ -18,11 +18,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upload, Flag, AlertTriangle } from "lucide-react";
+import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upload, Flag, AlertTriangle, Trash2 } from "lucide-react";
 import * as eventsService from "@/services/eventsService";
 import type { Track, TrackWriteData, DistCategory, TrackDirection, TrackType, RaceEvent, RaceEventWriteData, RaceEventUpdateData, RaceStatus, RaceResultInput, RaceParticipant } from "@/services/eventsService";
 import { toast } from "sonner";
-import { getSystemSettings, updateSystemSettings } from "@/services/settingsService";
+import { getSystemSettings, updateSystemSettings, updateLoggingSettings, getSecurityLogs, deleteSecurityLogs } from "@/services/settingsService";
+import type { LogEntry } from "@/services/settingsService";
 
 const AdminPanel: React.FC = () => {
   const navigate = useNavigate();
@@ -111,6 +112,21 @@ const AdminPanel: React.FC = () => {
   const [sessionTimeout, setSessionTimeout] = useState(30);
   const [sessionWarning, setSessionWarning] = useState(5);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
+
+  // Logging server settings
+  const [syslogHost, setSyslogHost] = useState('');
+  const [syslogPort, setSyslogPort] = useState(514);
+  const [isSavingLogging, setIsSavingLogging] = useState(false);
+  const [securityLogs, setSecurityLogs] = useState<LogEntry[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [logLimit, setLogLimit] = useState(100);
+
+  // Log filter + delete state
+  const [logLevelFilter, setLogLevelFilter] = useState('');
+  const [logDateFrom, setLogDateFrom] = useState('');
+  const [logDateTo, setLogDateTo] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingLogs, setIsDeletingLogs] = useState(false);
 
   // Skills tab
   const [managedSkills, setManagedSkills] = useState<SkillAdmin[]>([]);
@@ -219,14 +235,30 @@ const AdminPanel: React.FC = () => {
           const data = await getSystemSettings();
           const timeoutSetting = data.settings.find(s => s.setting_key === 'SESSION_TIMEOUT_MINUTES');
           const warningSetting = data.settings.find(s => s.setting_key === 'SESSION_WARNING_MINUTES');
+          const syslogHostSetting = data.settings.find(s => s.setting_key === 'SYSLOG_HOST');
+          const syslogPortSetting = data.settings.find(s => s.setting_key === 'SYSLOG_PORT');
 
           if (timeoutSetting) setSessionTimeout(parseInt(timeoutSetting.setting_value));
           if (warningSetting) setSessionWarning(parseInt(warningSetting.setting_value));
+          if (syslogHostSetting) setSyslogHost(syslogHostSetting.setting_value);
+          if (syslogPortSetting) setSyslogPort(parseInt(syslogPortSetting.setting_value) || 514);
         } catch (error) {
           console.error('Failed to fetch settings:', error);
         }
       };
+      const fetchLogs = async () => {
+        setIsLoadingLogs(true);
+        try {
+          const data = await getSecurityLogs(logLimit);
+          setSecurityLogs(data.logs);
+        } catch (error) {
+          console.error('Failed to fetch logs:', error);
+        } finally {
+          setIsLoadingLogs(false);
+        }
+      };
       fetchSettings();
+      fetchLogs();
     }
   }, [isAuthenticated, isAdmin, activeSection]);
 
@@ -796,6 +828,64 @@ const AdminPanel: React.FC = () => {
       toast.error(error.response?.data?.error || 'Failed to update settings');
     } finally {
       setIsLoadingSettings(false);
+    }
+  };
+
+  const handleSaveLoggingSettings = async () => {
+    const port = Number(syslogPort);
+    if (syslogHost && (port < 1 || port > 65535 || isNaN(port))) {
+      toast.error('Port must be between 1 and 65535');
+      return;
+    }
+    setIsSavingLogging(true);
+    try {
+      await updateLoggingSettings({ syslog_host: syslogHost, syslog_port: port || 514 });
+      toast.success('Logging settings updated. Restart the server to apply.');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to update logging settings');
+    } finally {
+      setIsSavingLogging(false);
+    }
+  };
+
+  const handleRefreshLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const data = await getSecurityLogs(logLimit);
+      setSecurityLogs(data.logs);
+    } catch {
+      toast.error('Failed to refresh logs');
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  const handleDeleteLogs = async () => {
+    setIsDeletingLogs(true);
+    try {
+      const result = await deleteSecurityLogs({
+        level:     logLevelFilter || undefined,
+        date_from: logDateFrom    || undefined,
+        date_to:   logDateTo      || undefined,
+      });
+      toast.success(`Deleted ${result.deleted} entries. ${result.remaining} remaining.`);
+      setShowDeleteConfirm(false);
+      // Refresh visible logs
+      const data = await getSecurityLogs(logLimit);
+      setSecurityLogs(data.logs);
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to delete logs');
+    } finally {
+      setIsDeletingLogs(false);
+    }
+  };
+
+  const levelColor = (level: string) => {
+    switch (level.trim()) {
+      case 'ERROR':    return 'text-red-500';
+      case 'WARNING':  return 'text-amber-500';
+      case 'INFO':     return 'text-blue-400';
+      default:         return 'text-muted-foreground';
     }
   };
 
@@ -2463,65 +2553,267 @@ const AdminPanel: React.FC = () => {
           )}
 
           {activeSection === "settings" && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Session Timeout Settings</CardTitle>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Configure automatic logout for inactive users
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="timeout">
-                    Session Timeout (minutes)
-                  </Label>
-                  <Input
-                    id="timeout"
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={sessionTimeout}
-                    onChange={(e) => setSessionTimeout(parseInt(e.target.value) || 1)}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Users will be logged out after this many minutes of inactivity (1-60)
+            <div className="space-y-6">
+              {/* Session Timeout */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Session Timeout Settings</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Configure automatic logout for inactive users
                   </p>
-                </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="timeout">Session Timeout (minutes)</Label>
+                    <Input
+                      id="timeout"
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={sessionTimeout}
+                      onChange={(e) => setSessionTimeout(parseInt(e.target.value) || 1)}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Users will be logged out after this many minutes of inactivity (1-60)
+                    </p>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="warning">
-                    Warning Time (minutes)
-                  </Label>
-                  <Input
-                    id="warning"
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={sessionWarning}
-                    onChange={(e) => setSessionWarning(parseInt(e.target.value) || 1)}
-                    disabled={sessionTimeout <= 1}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Show warning modal this many minutes before timeout (1-10)
+                  <div className="space-y-2">
+                    <Label htmlFor="warning">Warning Time (minutes)</Label>
+                    <Input
+                      id="warning"
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={sessionWarning}
+                      onChange={(e) => setSessionWarning(parseInt(e.target.value) || 1)}
+                      disabled={sessionTimeout <= 1}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Show warning modal this many minutes before timeout (1-10)
+                    </p>
+                  </div>
+
+                  <div className="flex items-center p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
+                    <AlertTriangle className="h-5 w-5 text-amber-500 mr-3 flex-shrink-0" />
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      Current setting: Users will see a warning after <strong>{sessionTimeout - sessionWarning} minutes</strong> of inactivity,
+                      then auto-logout after <strong>{sessionTimeout} minutes</strong> total.
+                    </p>
+                  </div>
+
+                  <Button onClick={handleSaveSessionSettings} disabled={isLoadingSettings}>
+                    {isLoadingSettings ? 'Saving...' : 'Save Settings'}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Logging Server */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Logging Server</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Remote syslog server that receives security events (login failures, lockouts). Leave host empty to disable remote logging.
                   </p>
-                </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div className="sm:col-span-2 space-y-2">
+                      <Label htmlFor="syslog-host">Syslog Server Host</Label>
+                      <Input
+                        id="syslog-host"
+                        type="text"
+                        placeholder="e.g. 192.168.1.17 or 100.x.x.x (Tailscale)"
+                        value={syslogHost}
+                        onChange={(e) => setSyslogHost(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="syslog-port">Port (default: 514)</Label>
+                      <Input
+                        id="syslog-port"
+                        type="number"
+                        min="1"
+                        max="65535"
+                        placeholder="514"
+                        value={syslogPort}
+                        onChange={(e) => setSyslogPort(parseInt(e.target.value) || 514)}
+                      />
+                    </div>
+                  </div>
 
-                <div className="flex items-center p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
-                  <AlertTriangle className="h-5 w-5 text-amber-500 mr-3 flex-shrink-0" />
-                  <p className="text-sm text-amber-800 dark:text-amber-200">
-                    Current setting: Users will see a warning after <strong>{sessionTimeout - sessionWarning} minutes</strong> of inactivity,
-                    then auto-logout after <strong>{sessionTimeout} minutes</strong> total.
-                  </p>
-                </div>
+                  <div className="flex items-center p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+                    <div className={`h-2.5 w-2.5 rounded-full mr-3 flex-shrink-0 ${syslogHost ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      {syslogHost
+                        ? <>Remote logging <strong>enabled</strong> → <code className="font-mono">{syslogHost}:{syslogPort}</code> (UDP). Server restart required to apply.</>
+                        : 'Remote logging disabled — events are only written to the local log file.'}
+                    </p>
+                  </div>
 
-                <Button
-                  onClick={handleSaveSessionSettings}
-                  disabled={isLoadingSettings}
-                >
-                  {isLoadingSettings ? 'Saving...' : 'Save Settings'}
-                </Button>
-              </CardContent>
-            </Card>
+                  <Button onClick={handleSaveLoggingSettings} disabled={isSavingLogging}>
+                    {isSavingLogging ? 'Saving...' : 'Save Logging Settings'}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Security Log Viewer */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Security Log Viewer</CardTitle>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Recent security events from this server's local log
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="text-sm border rounded px-2 py-1 bg-background"
+                        value={logLimit}
+                        onChange={(e) => setLogLimit(parseInt(e.target.value))}
+                      >
+                        <option value={50}>Last 50</option>
+                        <option value={100}>Last 100</option>
+                        <option value={200}>Last 200</option>
+                        <option value={500}>Last 500</option>
+                      </select>
+                      <Button variant="outline" size="sm" onClick={handleRefreshLogs} disabled={isLoadingLogs}>
+                        {isLoadingLogs ? 'Loading...' : 'Refresh'}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Filters + Delete row */}
+                  <div className="flex flex-wrap items-end gap-3 p-3 bg-muted/40 rounded-md border">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Filter by Level</label>
+                      <select
+                        className="text-sm border rounded px-2 py-1.5 bg-background min-w-[120px]"
+                        value={logLevelFilter}
+                        onChange={(e) => setLogLevelFilter(e.target.value)}
+                      >
+                        <option value="">All levels</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Date From</label>
+                      <Input
+                        type="date"
+                        className="text-sm h-9 w-40"
+                        value={logDateFrom}
+                        onChange={(e) => setLogDateFrom(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Date To</label>
+                      <Input
+                        type="date"
+                        className="text-sm h-9 w-40"
+                        value={logDateTo}
+                        onChange={(e) => setLogDateTo(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-end gap-2 ml-auto">
+                      {(logLevelFilter || logDateFrom || logDateTo) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground"
+                          onClick={() => { setLogLevelFilter(''); setLogDateFrom(''); setLogDateTo(''); }}
+                        >
+                          Clear filters
+                        </Button>
+                      )}
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="gap-1.5"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {logLevelFilter || logDateFrom || logDateTo ? 'Delete filtered' : 'Delete all'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Confirmation Dialog */}
+                  <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-destructive">
+                          <Trash2 className="h-5 w-5" />
+                          Confirm Log Deletion
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3 py-2">
+                        <p className="text-sm text-muted-foreground">
+                          This will permanently delete log entries matching the current filters. This action cannot be undone.
+                        </p>
+                        {(logLevelFilter || logDateFrom || logDateTo) ? (
+                          <div className="rounded-md border p-3 space-y-1 text-sm bg-muted/40">
+                            <p className="font-medium">Active filters:</p>
+                            {logLevelFilter && <p>Level: <span className={`font-semibold ${levelColor(logLevelFilter)}`}>{logLevelFilter}</span></p>}
+                            {logDateFrom  && <p>From: <span className="font-semibold">{logDateFrom}</span></p>}
+                            {logDateTo    && <p>To: <span className="font-semibold">{logDateTo}</span></p>}
+                          </div>
+                        ) : (
+                          <div className="rounded-md border border-destructive/40 p-3 text-sm bg-destructive/5">
+                            <p className="font-semibold text-destructive">No filters set — ALL log entries will be deleted.</p>
+                          </div>
+                        )}
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} disabled={isDeletingLogs}>
+                          Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={handleDeleteLogs} disabled={isDeletingLogs}>
+                          {isDeletingLogs ? 'Deleting...' : 'Yes, delete'}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+
+                  {/* Log table */}
+                  {isLoadingLogs ? (
+                    <p className="text-sm text-muted-foreground">Loading logs...</p>
+                  ) : securityLogs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No log entries found.</p>
+                  ) : (
+                    <div className="rounded-md border overflow-auto max-h-96 font-mono text-xs">
+                      <table className="w-full">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-medium whitespace-nowrap">Timestamp</th>
+                            <th className="text-left px-3 py-2 font-medium w-20">Level</th>
+                            <th className="text-left px-3 py-2 font-medium">Event</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {securityLogs
+                            .filter(e =>
+                              (!logLevelFilter || e.level.trim() === logLevelFilter) &&
+                              (!logDateFrom || e.timestamp.slice(0, 10) >= logDateFrom) &&
+                              (!logDateTo   || e.timestamp.slice(0, 10) <= logDateTo)
+                            )
+                            .map((entry, i) => (
+                              <tr key={i} className="border-t hover:bg-muted/30">
+                                <td className="px-3 py-1.5 text-muted-foreground whitespace-nowrap">{entry.timestamp}</td>
+                                <td className={`px-3 py-1.5 font-semibold whitespace-nowrap ${levelColor(entry.level)}`}>{entry.level.trim()}</td>
+                                <td className="px-3 py-1.5 break-all">{entry.message}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           )}
         </main>
       </div>

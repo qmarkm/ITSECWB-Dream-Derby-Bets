@@ -1,4 +1,5 @@
 import os
+import logging
 from decimal import Decimal
 from datetime import timedelta
 
@@ -12,6 +13,25 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
+
+security_log = logging.getLogger('security')
+
+
+def _get_client_ip(request):
+    """Extract real client IP.
+
+    Priority:
+    1. CF-Connecting-IP — set by Cloudflare, cannot be spoofed by the client.
+    2. REMOTE_ADDR — the direct upstream (Nginx); always trustworthy when
+       Cloudflare is not in the chain (e.g. local/staging).
+
+    We intentionally ignore X-Forwarded-For because its leftmost value is
+    client-controlled and can be forged, making log entries unreliable.
+    """
+    cf_ip = request.META.get('HTTP_CF_CONNECTING_IP')
+    if cf_ip:
+        return cf_ip.strip()
+    return request.META.get('REMOTE_ADDR', 'unknown')
 
 from .models import LoginAttempts, User, UserProfile, SystemSettings
 from .serializers import (
@@ -164,9 +184,14 @@ def admin_user_detail(request, user_id):
 class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         username = request.data.get('username')
+        ip = _get_client_ip(request)
+
         try:
             user = User.objects.get(username=username)
         except User.DoesNotExist:
+            security_log.warning(
+                'LOGIN_USER_NOT_FOUND | user=%s ip=%s', username, ip
+            )
             return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
@@ -178,7 +203,15 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                     login_attempt.login_attempts = 0
                     login_attempt.unlocks_on = None
                     login_attempt.save()
+                    security_log.info(
+                        'AUTO_UNLOCKED | user=%s ip=%s', username, ip
+                    )
                 else:
+                    security_log.warning(
+                        'LOGIN_BLOCKED_LOCKED | user=%s ip=%s unlocks_at=%s',
+                        username, ip,
+                        login_attempt.unlocks_on.strftime('%Y-%m-%dT%H:%M:%S%z') if login_attempt.unlocks_on else 'unknown',
+                    )
                     return Response({'error': 'Account is locked. Try again later.'}, status=status.HTTP_403_FORBIDDEN)
 
             try:
@@ -188,16 +221,33 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 if login_attempt.login_attempts >= MAX_LOGIN_ATTEMPTS:
                     login_attempt.locked_status = True
                     login_attempt.unlocks_on = timezone.now() + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
-                login_attempt.save()
+                    login_attempt.save()
+                    security_log.error(
+                        'ACCOUNT_LOCKED | user=%s ip=%s attempts=%d unlocks_at=%s',
+                        username, ip, login_attempt.login_attempts,
+                        login_attempt.unlocks_on.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                    )
+                else:
+                    login_attempt.save()
+                    security_log.warning(
+                        'LOGIN_FAILED | user=%s ip=%s attempts=%d/%d',
+                        username, ip, login_attempt.login_attempts, MAX_LOGIN_ATTEMPTS,
+                    )
                 return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
             login_attempt.login_attempts = 0
             login_attempt.locked_status = False
             login_attempt.unlocks_on = None
             login_attempt.save()
+            security_log.info(
+                'LOGIN_SUCCESS | user=%s ip=%s user_id=%d', username, ip, user.pk
+            )
             return response
 
         except Exception:
+            security_log.exception(
+                'LOGIN_ERROR | user=%s ip=%s', username, ip
+            )
             return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         finally:
             pass
@@ -214,6 +264,10 @@ def logout(request):
                 token.blacklist()
             except Exception:
                 pass
+        security_log.info(
+            'LOGOUT | user=%s ip=%s user_id=%d',
+            request.user.username, _get_client_ip(request), request.user.pk,
+        )
         return Response({'message': 'Logout successful.'}, status=status.HTTP_200_OK)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -414,6 +468,8 @@ def manage_system_settings(request):
         elif request.method == 'POST':
             timeout_minutes = request.data.get('timeout_minutes')
             warning_minutes = request.data.get('warning_minutes')
+            syslog_host = request.data.get('syslog_host')
+            syslog_port = request.data.get('syslog_port')
 
             if timeout_minutes is not None:
                 try:
@@ -463,11 +519,262 @@ def manage_system_settings(request):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
+            if syslog_host is not None:
+                host_val = str(syslog_host).strip()
+                SystemSettings.set_setting(
+                    'SYSLOG_HOST',
+                    host_val,
+                    user=request.user,
+                    description='Remote syslog server IP or hostname (leave empty to disable remote logging)'
+                )
+
+            if syslog_port is not None:
+                try:
+                    port_val = int(syslog_port)
+                    if port_val < 1 or port_val > 65535:
+                        return Response(
+                            {'error': 'Port must be between 1 and 65535'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    SystemSettings.set_setting(
+                        'SYSLOG_PORT',
+                        port_val,
+                        user=request.user,
+                        description='Remote syslog server UDP port (default: 514)'
+                    )
+                except ValueError:
+                    return Response(
+                        {'error': 'Invalid port value'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
             return Response({
                 'message': 'Settings updated successfully',
                 'timeout_minutes': int(SystemSettings.get_setting('SESSION_TIMEOUT_MINUTES', 30)),
                 'warning_minutes': int(SystemSettings.get_setting('SESSION_WARNING_MINUTES', 5)),
+                'syslog_host': SystemSettings.get_setting('SYSLOG_HOST', ''),
+                'syslog_port': int(SystemSettings.get_setting('SYSLOG_PORT', 514)),
             })
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+REMOTE_LOG_PATH = '/var/log/derby-bets/security.log'
+REMOTE_LOG_USER = 'kali'
+SSH_KEY_PATH = os.path.expanduser('~/.ssh/id_ed25519')
+
+
+def _ssh_connect():
+    """Return an authenticated paramiko SSHClient to the syslog server."""
+    import paramiko
+    host = settings.SYSLOG_HOST
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(
+        hostname=host,
+        username=REMOTE_LOG_USER,
+        key_filename=SSH_KEY_PATH,
+        timeout=8,
+    )
+    return client
+
+
+def _read_remote_log_lines():
+    """SSH into the logging server and return all lines of security.log."""
+    client = _ssh_connect()
+    try:
+        _, stdout, _ = client.exec_command(f'cat {REMOTE_LOG_PATH} 2>/dev/null || true')
+        return stdout.read().decode('utf-8', errors='replace').splitlines(keepends=True)
+    finally:
+        client.close()
+
+
+def _write_remote_log_lines(lines):
+    """Overwrite the remote security.log with the given lines via sudo tee."""
+    import paramiko
+    client = _ssh_connect()
+    try:
+        sftp = client.open_sftp()
+        import io
+        content = ''.join(lines).encode('utf-8')
+        with sftp.open(REMOTE_LOG_PATH, 'w') as f:
+            f.write(content)
+        sftp.close()
+    finally:
+        client.close()
+
+
+def _parse_log_lines(lines):
+    """Parse raw log lines into dicts with timestamp, level, message.
+
+    Handles both local format:
+      2026-04-09T12:00:00+0000 | LEVEL | name | message
+    And rsyslog remote format:
+      2026-04-09T12:00:00.123-04:00 192.168.1.8 derby-bets: LEVEL | message
+    """
+    entries = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Try remote rsyslog format first: "TIMESTAMP HOST derby-bets: LEVEL | message"
+        if 'derby-bets:' in line:
+            try:
+                # Split off timestamp and host prefix
+                rest = line.split('derby-bets: ', 1)[1]  # "LEVEL | message"
+                ts_host = line.split('derby-bets:')[0].strip()
+                parts_ts = ts_host.split(' ')
+                timestamp = parts_ts[0] if parts_ts else ''
+                msg_parts = rest.split(' | ', 1)
+                level = msg_parts[0].strip()
+                message = msg_parts[1].strip() if len(msg_parts) > 1 else rest
+                entries.append({
+                    'timestamp': timestamp,
+                    'level': level,
+                    'message': message,
+                    '_raw': line,
+                })
+                continue
+            except Exception:
+                pass
+
+        # Local format: "TIMESTAMP | LEVEL | name | message"
+        parts = line.split(' | ', 3)
+        if len(parts) == 4:
+            entries.append({
+                'timestamp': parts[0],
+                'level': parts[1].strip(),
+                'message': parts[3],
+                '_raw': line,
+            })
+        else:
+            entries.append({'timestamp': '', 'level': 'INFO', 'message': line, '_raw': line})
+    return entries
+
+
+def _get_log_lines():
+    """Return raw log lines — from Kali if SYSLOG_HOST is set, else local."""
+    if settings.SYSLOG_HOST:
+        return _read_remote_log_lines()
+    log_path = os.path.join(settings.LOG_DIR, 'security.log')
+    if not os.path.exists(log_path):
+        return []
+    with open(log_path, 'r', encoding='utf-8') as f:
+        return f.readlines()
+
+
+def _write_log_lines(lines):
+    """Write log lines — to Kali if SYSLOG_HOST is set, else local."""
+    if settings.SYSLOG_HOST:
+        _write_remote_log_lines(lines)
+    else:
+        log_path = os.path.join(settings.LOG_DIR, 'security.log')
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_security_logs(request):
+    """Admin endpoint — returns the last N lines of security.log.
+    Reads from the remote Kali logging server when SYSLOG_HOST is configured.
+    """
+    try:
+        if not _ensure_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+        limit = min(int(request.query_params.get('limit', 100)), 500)
+        lines = _get_log_lines()
+
+        entries = [
+            {k: v for k, v in e.items() if k != '_raw'}
+            for e in reversed(_parse_log_lines(lines[-limit:]))
+        ]
+
+        source = 'remote' if settings.SYSLOG_HOST else 'local'
+        return Response({'logs': entries, 'total': len(lines), 'source': source})
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_security_logs(request):
+    """Admin endpoint — delete log entries matching optional filters.
+
+    Query params:
+      level     — delete only entries matching this level (e.g. WARNING)
+      date_from — ISO date string YYYY-MM-DD, delete entries on/after this date
+      date_to   — ISO date string YYYY-MM-DD, delete entries on/before this date
+
+    If no filters are provided, the entire log file is cleared.
+    Operates on the remote Kali server when SYSLOG_HOST is configured.
+    """
+    try:
+        if not _ensure_admin(request.user):
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+        level_filter = request.query_params.get('level', '').strip().upper()
+        date_from = request.query_params.get('date_from', '').strip()
+        date_to = request.query_params.get('date_to', '').strip()
+
+        lines = _get_log_lines()
+        parsed = _parse_log_lines(lines)
+        no_filters = not level_filter and not date_from and not date_to
+
+        if no_filters:
+            _write_log_lines([])
+            security_log.warning(
+                'LOG_CLEARED | user=%s ip=%s deleted=%d source=%s',
+                request.user.username, _get_client_ip(request),
+                len(parsed), 'remote' if settings.SYSLOG_HOST else 'local',
+            )
+            return Response({'deleted': len(parsed), 'remaining': 0})
+
+        kept = []
+        deleted = 0
+        for entry in parsed:
+            should_delete = True
+
+            if level_filter and entry['level'] != level_filter:
+                should_delete = False
+
+            if date_from and entry['timestamp']:
+                try:
+                    if entry['timestamp'][:10] < date_from:
+                        should_delete = False
+                except Exception:
+                    should_delete = False
+
+            if date_to and entry['timestamp']:
+                try:
+                    if entry['timestamp'][:10] > date_to:
+                        should_delete = False
+                except Exception:
+                    should_delete = False
+
+            if should_delete:
+                deleted += 1
+            else:
+                kept.append(entry['_raw'] + '\n')
+
+        _write_log_lines(kept)
+
+        security_log.warning(
+            'LOG_PARTIAL_DELETE | user=%s ip=%s filters="level=%s date_from=%s date_to=%s" deleted=%d remaining=%d source=%s',
+            request.user.username, _get_client_ip(request),
+            level_filter or 'any', date_from or 'any', date_to or 'any',
+            deleted, len(kept), 'remote' if settings.SYSLOG_HOST else 'local',
+        )
+
+        return Response({'deleted': deleted, 'remaining': len(kept)})
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
