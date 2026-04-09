@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import transaction
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -38,7 +40,7 @@ def index(request):
 def get_tracks(request):
     try:
         tracks = Track.objects.all()
-        serializer = TrackSerializer(tracks, many=True)
+        serializer = TrackSerializer(tracks, many=True, context={'request': request})
         return Response(serializer.data)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -53,10 +55,13 @@ def create_track(request):
         if not (request.user.is_staff and request.user.is_superuser):
             return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = TrackWriteSerializer(data=request.data)
+        data = request.data.copy()
+        if 'image' in request.FILES:
+            data['image'] = request.FILES['image']
+        serializer = TrackWriteSerializer(data=data)
         if serializer.is_valid():
             track = serializer.save()
-            return Response(TrackSerializer(track).data, status=status.HTTP_201_CREATED)
+            return Response(TrackSerializer(track, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
@@ -73,10 +78,13 @@ def update_track(request, id):
             return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
         track = Track.objects.get(id=id)
-        serializer = TrackWriteSerializer(track, data=request.data, partial=True)
+        data = request.data.copy()
+        if 'image' in request.FILES:
+            data['image'] = request.FILES['image']
+        serializer = TrackWriteSerializer(track, data=data, partial=True)
         if serializer.is_valid():
             track = serializer.save()
-            return Response(TrackSerializer(track).data)
+            return Response(TrackSerializer(track, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Track.DoesNotExist:
@@ -258,10 +266,34 @@ def set_race_results(request, id):
 
         with transaction.atomic():
             race_locked = RaceEvent.objects.select_for_update().get(pk=race.pk)
+
+            # 1. Set finishing places
             for entry in updates:
                 Results.objects.filter(
                     id=entry['result_id'], race_event=race_locked
                 ).update(place=entry['place'])
+
+            # 2. Payout: x2 for bets on 1st place, x0.5 consolation for the rest
+            from ..users.models import UserProfile
+            winning_result_id = next(
+                e['result_id'] for e in updates if e['place'] == 1
+            )
+            bids = race_locked.bids.select_related('bidder__profile', 'uma').all()
+            for bid in bids:
+                profile = UserProfile.objects.select_for_update().get(pk=bid.bidder.profile.pk)
+                if bid.uma_id == winning_result_id:
+                    payout = bid.amount * 2
+                    profile.balance += payout
+                    profile.total_bets_won += 1
+                    profile.total_winnings += payout
+                else:
+                    consolation = bid.amount * Decimal('0.5')
+                    profile.balance += consolation
+                    profile.total_bets_lost += 1
+                    profile.total_losses += bid.amount - consolation
+                profile.total_bets_placed += 1
+                profile.save()
+
             race_locked.status = RaceEvent.Status.completed
             race_locked.save()
 
@@ -335,10 +367,37 @@ def place_bid(request, id):
             data=request.data,
             context={'request': request, 'race_event': race_event},
         )
-        if serializer.is_valid():
-            bid = serializer.save()
-            return Response(BidsSerializer(bid).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Atomic block with row-level lock to prevent race conditions
+        with transaction.atomic():
+            profile = request.user.profile.__class__.objects.select_for_update().get(
+                pk=request.user.profile.pk
+            )
+            amount = serializer.validated_data['amount']
+
+            if amount <= 0:
+                return Response(
+                    {'amount': ['Bet amount must be greater than zero.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if profile.balance < amount:
+                return Response(
+                    {'amount': ['Insufficient balance.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            profile.balance -= amount
+            profile.save()
+
+            bid = Bids.objects.create(
+                race_event=race_event,
+                bidder=request.user,
+                **serializer.validated_data,
+            )
+
+        return Response(BidsSerializer(bid).data, status=status.HTTP_201_CREATED)
 
     except RaceEvent.DoesNotExist:
         return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -399,12 +458,36 @@ def bid_detail(request, bid_id):
                 partial=True,
                 context={'request': request},
             )
-            if serializer.is_valid():
-                with transaction.atomic():
-                    serializer.save()
-                bid.refresh_from_db()
-                return Response(BidsSerializer(bid).data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            with transaction.atomic():
+                profile = request.user.profile.__class__.objects.select_for_update().get(
+                    pk=request.user.profile.pk
+                )
+                new_amount = serializer.validated_data.get('amount', bid.amount)
+
+                if new_amount <= 0:
+                    return Response(
+                        {'amount': ['Bet amount must be greater than zero.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                difference = new_amount - bid.amount
+                if difference > 0 and profile.balance < difference:
+                    return Response(
+                        {'amount': ['Insufficient balance.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                profile.balance -= difference
+                profile.save()
+
+                bid.amount = new_amount
+                bid.save()
+
+            bid.refresh_from_db()
+            return Response(BidsSerializer(bid).data)
 
         # DELETE
         cancellable_statuses = [RaceEvent.Status.scheduled, RaceEvent.Status.open]
@@ -412,7 +495,9 @@ def bid_detail(request, bid_id):
             return Response({'error': 'Cannot cancel a bid after betting has closed.'}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            profile = request.user.profile
+            profile = request.user.profile.__class__.objects.select_for_update().get(
+                pk=request.user.profile.pk
+            )
             profile.balance += bid.amount
             profile.save()
             bid.delete()

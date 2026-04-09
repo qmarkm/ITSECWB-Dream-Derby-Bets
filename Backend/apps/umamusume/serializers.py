@@ -1,10 +1,10 @@
 import re
 from rest_framework import serializers
 from .models import Aptitude, Skill, Umamusume, Umas
+from ..utils.validators import validate_uploaded_image
 
 _HTML_PATTERN = re.compile(r'<[^>]+>')
 _XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
-_VALID_URL_SCHEMES = ('http://', 'https://')
 
 
 class SkillSerializer(serializers.ModelSerializer):
@@ -16,19 +16,30 @@ class SkillSerializer(serializers.ModelSerializer):
 
 class UmaSerializer(serializers.ModelSerializer):
     skills = SkillSerializer(source='unique_skill', many=True, read_only=True)
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Umas
         fields = ['id', 'name', 'avatar_url', 'is_active', 'skills']
         read_only_fields = ['id']
 
+    def get_avatar_url(self, obj):
+        if obj.avatar and hasattr(obj.avatar, 'url'):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
+
 
 class UmaCreateSerializer(serializers.ModelSerializer):
+    avatar = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = Umas
-        fields = ['name', 'avatar_url']
+        fields = ['name', 'avatar']
         extra_kwargs = {
-            'avatar_url': {'required': False, 'allow_blank': True},
+            'avatar': {'required': False},
         }
 
     def validate_name(self, value):
@@ -50,21 +61,11 @@ class UmaCreateSerializer(serializers.ModelSerializer):
         finally:
             pass
 
-    def validate_avatar_url(self, value):
-        try:
-            if not value:
-                return value
-            if not value.startswith(_VALID_URL_SCHEMES):
-                raise serializers.ValidationError("Invalid avatar URL.")
-            if _XSS_PATTERN.search(value):
-                raise serializers.ValidationError("Invalid avatar URL.")
+    def validate_avatar(self, value):
+        if not value:
             return value
-        except serializers.ValidationError:
-            raise
-        except Exception:
-            raise serializers.ValidationError("Invalid avatar URL.")
-        finally:
-            pass
+        validate_uploaded_image(value)
+        return value
 
 
 class AptitudeSerializer(serializers.ModelSerializer):
@@ -86,12 +87,30 @@ class UmamusumeSerializer(serializers.ModelSerializer):
     user_username = serializers.CharField(source='user.username', read_only=True)
     races_won = serializers.SerializerMethodField()
     races_lost = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
 
     def get_races_won(self, obj):
         return obj.results.filter(place=1).count()
 
     def get_races_lost(self, obj):
         return obj.results.filter(place__gt=1).count()
+
+    def get_avatar_url(self, obj):
+        request = self.context.get('request')
+
+        # Check if the specific umamusume has an avatar
+        if obj.avatar and hasattr(obj.avatar, 'url'):
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+
+        # Fallback to the base uma's avatar
+        if obj.uma and obj.uma.avatar and hasattr(obj.uma.avatar, 'url'):
+            if request:
+                return request.build_absolute_uri(obj.uma.avatar.url)
+            return obj.uma.avatar.url
+
+        return None
 
     class Meta:
         model = Umamusume
@@ -142,11 +161,12 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
         required=True
     )
     aptitudes = AptitudeUpdateSerializer(required=False)
+    avatar = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Umamusume
         fields = [
-            'name', 'avatar_url', 'base_uma_id',
+            'name', 'avatar', 'base_uma_id',
             'speed', 'stamina', 'power', 'guts', 'wit',
             'skill_ids', 'aptitudes'
         ]
@@ -168,21 +188,11 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
         finally:
             pass
 
-    def validate_avatar_url(self, value):
-        try:
-            if not value:
-                return value
-            if not value.startswith(_VALID_URL_SCHEMES):
-                raise serializers.ValidationError("Invalid avatar URL.")
-            if _XSS_PATTERN.search(value):
-                raise serializers.ValidationError("Invalid avatar URL.")
+    def validate_avatar(self, value):
+        if not value:
             return value
-        except serializers.ValidationError:
-            raise
-        except Exception:
-            raise serializers.ValidationError("Invalid avatar URL.")
-        finally:
-            pass
+        validate_uploaded_image(value)
+        return value
 
     def create(self, validated_data):
         try:
@@ -230,12 +240,14 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
 
 
 class UmaUpdateSerializer(serializers.ModelSerializer):
+    avatar = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = Umas
-        fields = ['name', 'avatar_url']
+        fields = ['name', 'avatar']
         extra_kwargs = {
             'name': {'required': False},
-            'avatar_url': {'required': False, 'allow_blank': True},
+            'avatar': {'required': False},
         }
 
     def validate_name(self, value):
@@ -257,21 +269,11 @@ class UmaUpdateSerializer(serializers.ModelSerializer):
         finally:
             pass
 
-    def validate_avatar_url(self, value):
-        try:
-            if not value:
-                return value
-            if not value.startswith(_VALID_URL_SCHEMES):
-                raise serializers.ValidationError("Invalid avatar URL.")
-            if _XSS_PATTERN.search(value):
-                raise serializers.ValidationError("Invalid avatar URL.")
+    def validate_avatar(self, value):
+        if not value:
             return value
-        except serializers.ValidationError:
-            raise
-        except Exception:
-            raise serializers.ValidationError("Invalid avatar URL.")
-        finally:
-            pass
+        validate_uploaded_image(value)
+        return value
 
 
 class SkillAdminSerializer(serializers.ModelSerializer):

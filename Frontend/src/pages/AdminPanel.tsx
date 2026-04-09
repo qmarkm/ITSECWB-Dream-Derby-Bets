@@ -22,6 +22,7 @@ import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upl
 import * as eventsService from "@/services/eventsService";
 import type { Track, TrackWriteData, DistCategory, TrackDirection, TrackType, RaceEvent, RaceEventWriteData, RaceEventUpdateData, RaceStatus, RaceResultInput, RaceParticipant } from "@/services/eventsService";
 import { toast } from "sonner";
+import { validateImageFile, ALLOWED_IMAGE_EXTENSIONS } from "@/utils/fileValidation";
 import { getSystemSettings, updateSystemSettings, updateLoggingSettings, getSecurityLogs, deleteSecurityLogs } from "@/services/settingsService";
 import type { LogEntry } from "@/services/settingsService";
 
@@ -62,10 +63,11 @@ const AdminPanel: React.FC = () => {
   const [isSavingTrack, setIsSavingTrack] = useState(false);
 
   const EMPTY_TRACK_FORM: TrackWriteData = {
-    name: "", image: "", distance: "",
+    name: "", image: null, distance: "",
     dist_category: "Sprint", direction: "right", track_type: "turf",
   };
   const [trackForm, setTrackForm] = useState<TrackWriteData>(EMPTY_TRACK_FORM);
+  const [trackImagePreview, setTrackImagePreview] = useState<string>("");
 
   // ── Race Events state ──
   const [raceEvents, setRaceEvents] = useState<RaceEvent[]>([]);
@@ -102,7 +104,8 @@ const AdminPanel: React.FC = () => {
     phone_number: "",
   });
   const [newUmaName, setNewUmaName] = useState("");
-  const [newUmaAvatarUrl, setNewUmaAvatarUrl] = useState("");
+  const [newUmaAvatarFile, setNewUmaAvatarFile] = useState<File | null>(null);
+  const [newUmaAvatarPreview, setNewUmaAvatarPreview] = useState<string>("");
   const [isCreatingUma, setIsCreatingUma] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -161,7 +164,8 @@ const AdminPanel: React.FC = () => {
   // Edit Uma
   const [editingUma, setEditingUma] = useState<BaseUma | null>(null);
   const [editName, setEditName] = useState("");
-  const [editAvatarUrl, setEditAvatarUrl] = useState("");
+  const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
+  const [editAvatarPreview, setEditAvatarPreview] = useState<string>("");
   const [isUpdatingUma, setIsUpdatingUma] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
@@ -181,7 +185,7 @@ const AdminPanel: React.FC = () => {
   const FULL_NAME_REGEX = /^[a-zA-Z\s\-\.']+$/;
   const PHONE_REGEX = /^\+?[0-9\s\-\(\)]{7,20}$/;
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const URL_REGEX = /^https?:\/\/.+/;
+
   const HTML_PATTERN = /<[^>]+>/;
   const XSS_PATTERN = /(javascript\s*:|on\w+\s*=|<script)/i;
 
@@ -401,24 +405,25 @@ const AdminPanel: React.FC = () => {
     if (trimmedUmaName.length > 100) { toast.error("Uma name cannot exceed 100 characters"); return; }
     if (HTML_PATTERN.test(trimmedUmaName)) { toast.error("Uma name must not contain HTML tags"); return; }
     if (XSS_PATTERN.test(trimmedUmaName)) { toast.error("Uma name contains invalid content"); return; }
-    if (newUmaAvatarUrl) {
-      if (!URL_REGEX.test(newUmaAvatarUrl)) { toast.error("Avatar URL must start with http:// or https://"); return; }
-      if (XSS_PATTERN.test(newUmaAvatarUrl)) { toast.error("Avatar URL contains invalid content"); return; }
+    if (newUmaAvatarFile) {
+      const err = validateImageFile(newUmaAvatarFile);
+      if (err) { toast.error(err); return; }
     }
     setIsCreatingUma(true);
     try {
       const uma = await umaService.adminCreateBaseUma({
         name: trimmedUmaName,
-        avatar_url: newUmaAvatarUrl || undefined,
+        avatar: newUmaAvatarFile || undefined,
       });
       setAllUmas((prev) => [...prev, uma]);
       toast.success("Uma created successfully.");
       setNewUmaName("");
-      setNewUmaAvatarUrl("");
+      setNewUmaAvatarFile(null);
+      setNewUmaAvatarPreview("");
     } catch (error: any) {
       const firstError =
         error?.response?.data?.name?.[0] ||
-        error?.response?.data?.avatar_url?.[0] ||
+        error?.response?.data?.avatar?.[0] ||
         error?.response?.data?.detail ||
         "Failed to create Uma.";
       toast.error(firstError);
@@ -456,7 +461,8 @@ const AdminPanel: React.FC = () => {
   const openEditDialog = (uma: BaseUma) => {
     setEditingUma(uma);
     setEditName(uma.name);
-    setEditAvatarUrl(uma.avatar_url || "");
+    setEditAvatarFile(null);
+    setEditAvatarPreview(uma.avatar_url || "");
     setDeleteConfirmId(null);
   };
 
@@ -539,16 +545,21 @@ const AdminPanel: React.FC = () => {
   const handleCreateTrack = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trackForm.name.trim()) { toast.error('Track name is required.'); return; }
+    if (trackForm.image) {
+      const err = validateImageFile(trackForm.image);
+      if (err) { toast.error(err); return; }
+    }
     setIsSavingTrack(true);
     try {
       const created = await eventsService.adminCreateTrack({
         ...trackForm,
         name: trackForm.name.trim(),
-        image: trackForm.image?.trim() || undefined,
+        image: trackForm.image || undefined,
         distance: trackForm.distance?.trim() || undefined,
       });
       setTracks((prev) => [...prev, created]);
       setTrackForm(EMPTY_TRACK_FORM);
+      setTrackImagePreview("");
       setShowCreateTrackForm(false);
       toast.success(`Track "${created.name}" created.`);
     } catch (err: any) {
@@ -562,12 +573,13 @@ const AdminPanel: React.FC = () => {
     setEditingTrack(track);
     setTrackForm({
       name: track.name,
-      image: track.image || "",
+      image: null,
       distance: track.distance || "",
       dist_category: track.dist_category,
       direction: track.direction,
       track_type: track.track_type,
     });
+    setTrackImagePreview(track.image_url || "");
     setTrackDeleteConfirmId(null);
   };
 
@@ -575,12 +587,16 @@ const AdminPanel: React.FC = () => {
     e.preventDefault();
     if (!editingTrack) return;
     if (!trackForm.name.trim()) { toast.error('Track name is required.'); return; }
+    if (trackForm.image) {
+      const err = validateImageFile(trackForm.image);
+      if (err) { toast.error(err); return; }
+    }
     setIsSavingTrack(true);
     try {
       const updated = await eventsService.adminUpdateTrack(editingTrack.id, {
         ...trackForm,
         name: trackForm.name.trim(),
-        image: trackForm.image?.trim() || undefined,
+        image: trackForm.image || undefined,
         distance: trackForm.distance?.trim() || undefined,
       });
       setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -718,15 +734,15 @@ const AdminPanel: React.FC = () => {
     if (trimmedEditName.length > 100) { toast.error("Uma name cannot exceed 100 characters"); return; }
     if (HTML_PATTERN.test(trimmedEditName)) { toast.error("Uma name must not contain HTML tags"); return; }
     if (XSS_PATTERN.test(trimmedEditName)) { toast.error("Uma name contains invalid content"); return; }
-    if (editAvatarUrl) {
-      if (!URL_REGEX.test(editAvatarUrl)) { toast.error("Avatar URL must start with http:// or https://"); return; }
-      if (XSS_PATTERN.test(editAvatarUrl)) { toast.error("Avatar URL contains invalid content"); return; }
+    if (editAvatarFile) {
+      const err = validateImageFile(editAvatarFile);
+      if (err) { toast.error(err); return; }
     }
     setIsUpdatingUma(true);
     try {
       const updated = await umaService.adminUpdateUma(editingUma.id, {
         name: trimmedEditName,
-        avatar_url: editAvatarUrl || undefined,
+        avatar: editAvatarFile || undefined,
       });
       setAllUmas((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
       toast.success("Uma updated.");
@@ -734,7 +750,7 @@ const AdminPanel: React.FC = () => {
     } catch (error: any) {
       const firstError =
         error?.response?.data?.name?.[0] ||
-        error?.response?.data?.avatar_url?.[0] ||
+        error?.response?.data?.avatar?.[0] ||
         error?.response?.data?.detail ||
         "Failed to update Uma.";
       toast.error(firstError);
@@ -1385,15 +1401,31 @@ const AdminPanel: React.FC = () => {
                       </div>
                       <div>
                         <Label htmlFor="uma-avatar">
-                          Avatar URL{" "}
+                          Avatar Image{" "}
                           <span className="text-muted-foreground font-normal">(optional)</span>
                         </Label>
                         <Input
                           id="uma-avatar"
-                          value={newUmaAvatarUrl}
-                          onChange={(e) => setNewUmaAvatarUrl(e.target.value)}
-                          placeholder="https://..."
+                          type="file"
+                          accept={ALLOWED_IMAGE_EXTENSIONS}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            setNewUmaAvatarFile(file);
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => setNewUmaAvatarPreview(ev.target?.result as string);
+                              reader.readAsDataURL(file);
+                            } else {
+                              setNewUmaAvatarPreview("");
+                            }
+                          }}
                         />
+                        {newUmaAvatarPreview && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <img src={newUmaAvatarPreview} alt="Preview" className="h-12 w-12 rounded-md object-cover border" />
+                            <button type="button" className="text-xs text-muted-foreground hover:text-destructive" onClick={() => { setNewUmaAvatarFile(null); setNewUmaAvatarPreview(""); }}>Remove</button>
+                          </div>
+                        )}
                       </div>
                       <Button type="submit" className="w-full" disabled={isCreatingUma}>
                         {isCreatingUma ? "Creating..." : "Create Uma"}
@@ -1560,12 +1592,11 @@ const AdminPanel: React.FC = () => {
                     </p>
                     <div className="rounded-md bg-muted/60 px-3 py-2 text-xs font-mono text-muted-foreground space-y-0.5">
                       <p><span className="text-foreground font-semibold">name</span> — required</p>
-                      <p><span className="text-foreground">avatar_url</span> — optional</p>
                       <p><span className="text-foreground">skill_name</span> — optional</p>
                       <p><span className="text-foreground">skill_description</span> — optional, used with skill_name</p>
                     </div>
                     <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-600 dark:text-yellow-400">
-                      <span className="font-semibold">Avatar images:</span> Use URLs from hotlink-friendly hosts (e.g. Imgur, GitHub raw). Most sites (Reddit, Wikis, Google) block direct image embedding and will show as broken.
+                      <span className="font-semibold">Note:</span> Avatar images can be uploaded individually after import via the Uma edit dialog.
                     </div>
                     <form onSubmit={handleCsvImport} className="flex items-end gap-3">
                       <div className="flex-1">
@@ -1824,15 +1855,31 @@ const AdminPanel: React.FC = () => {
                           </div>
                           <div>
                             <Label htmlFor="edit-uma-avatar">
-                              Avatar URL{" "}
+                              Avatar Image{" "}
                               <span className="text-muted-foreground font-normal text-xs">(optional)</span>
                             </Label>
                             <Input
                               id="edit-uma-avatar"
-                              value={editAvatarUrl}
-                              onChange={(e) => setEditAvatarUrl(e.target.value)}
-                              placeholder="https://..."
+                              type="file"
+                              accept={ALLOWED_IMAGE_EXTENSIONS}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                setEditAvatarFile(file);
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = (ev) => setEditAvatarPreview(ev.target?.result as string);
+                                  reader.readAsDataURL(file);
+                                } else {
+                                  setEditAvatarPreview(editingUma?.avatar_url || "");
+                                }
+                              }}
                             />
+                            {editAvatarPreview && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <img src={editAvatarPreview} alt="Current avatar" className="h-12 w-12 rounded-md object-cover border" />
+                                <button type="button" className="text-xs text-muted-foreground hover:text-destructive" onClick={() => { setEditAvatarFile(null); setEditAvatarPreview(""); }}>Remove</button>
+                              </div>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <Label>Assigned Skills</Label>
@@ -2062,8 +2109,24 @@ const AdminPanel: React.FC = () => {
                           <Input id="t-name" value={trackForm.name} onChange={(e) => setTrackForm({ ...trackForm, name: e.target.value })} placeholder="e.g. Tokyo Racecourse" />
                         </div>
                         <div className="space-y-1">
-                          <Label htmlFor="t-image">Image URL</Label>
-                          <Input id="t-image" value={trackForm.image || ""} onChange={(e) => setTrackForm({ ...trackForm, image: e.target.value })} placeholder="https://..." />
+                          <Label htmlFor="t-image">Image</Label>
+                          <Input id="t-image" type="file" accept={ALLOWED_IMAGE_EXTENSIONS} onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            setTrackForm({ ...trackForm, image: file });
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => setTrackImagePreview(ev.target?.result as string);
+                              reader.readAsDataURL(file);
+                            } else {
+                              setTrackImagePreview("");
+                            }
+                          }} />
+                          {trackImagePreview && (
+                            <div className="mt-1 flex items-center gap-2">
+                              <img src={trackImagePreview} alt="Preview" className="h-10 w-16 rounded object-cover border" />
+                              <button type="button" className="text-xs text-muted-foreground hover:text-destructive" onClick={() => { setTrackForm({ ...trackForm, image: null }); setTrackImagePreview(""); }}>Remove</button>
+                            </div>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="t-distance">Distance</Label>
@@ -2144,8 +2207,8 @@ const AdminPanel: React.FC = () => {
                             .map((track) => (
                               <tr key={track.id} className="hover:bg-muted/30 transition-colors">
                                 <td className="px-4 py-3 font-medium flex items-center gap-2">
-                                  {track.image && (
-                                    <img src={track.image} alt={track.name} className="h-8 w-12 rounded object-cover shrink-0" />
+                                  {track.image_url && (
+                                    <img src={track.image_url} alt={track.name} className="h-8 w-12 rounded object-cover shrink-0" />
                                   )}
                                   {track.name}
                                 </td>
@@ -2497,8 +2560,24 @@ const AdminPanel: React.FC = () => {
                           <Input id="et-name" value={trackForm.name} onChange={(e) => setTrackForm({ ...trackForm, name: e.target.value })} />
                         </div>
                         <div className="space-y-1 sm:col-span-2">
-                          <Label htmlFor="et-image">Image URL</Label>
-                          <Input id="et-image" value={trackForm.image || ""} onChange={(e) => setTrackForm({ ...trackForm, image: e.target.value })} placeholder="https://..." />
+                          <Label htmlFor="et-image">Image</Label>
+                          <Input id="et-image" type="file" accept={ALLOWED_IMAGE_EXTENSIONS} onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            setTrackForm({ ...trackForm, image: file });
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => setTrackImagePreview(ev.target?.result as string);
+                              reader.readAsDataURL(file);
+                            } else {
+                              setTrackImagePreview(editingTrack?.image_url || "");
+                            }
+                          }} />
+                          {trackImagePreview && (
+                            <div className="mt-1 flex items-center gap-2">
+                              <img src={trackImagePreview} alt="Current" className="h-10 w-16 rounded object-cover border" />
+                              <button type="button" className="text-xs text-muted-foreground hover:text-destructive" onClick={() => { setTrackForm({ ...trackForm, image: null }); setTrackImagePreview(""); }}>Remove</button>
+                            </div>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="et-distance">Distance</Label>

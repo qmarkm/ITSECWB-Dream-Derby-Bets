@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { ArrowLeft, Camera, Mail, User, Calendar, Coins, Edit2, Check, X, Plus } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ const Profile: React.FC = () => {
   const navigate = useNavigate();
   const { user, updateAccount, uploadAvatar, isLoading } = useAuth();
 
+  const location = useLocation();
   const { umas, isLoading: isLoadingUmas, fetchMyUmas } = useUmas();
   const [bids, setBids] = useState<Bid[]>([]);
   const [bidsLoading, setBidsLoading] = useState(false);
@@ -33,7 +34,7 @@ const Profile: React.FC = () => {
       setBidsLoading(true);
       getMyBids().then(setBids).catch(() => {}).finally(() => setBidsLoading(false));
     }
-  }, [user, fetchMyUmas]);
+  }, [user, fetchMyUmas, location.key]);
 
   // useState only runs initial values once; user is often null on first render while auth loads.
   useEffect(() => {
@@ -130,7 +131,7 @@ const Profile: React.FC = () => {
         <div className="space-y-6">
           {/* Profile Header Card */}
           <Card className="overflow-hidden">
-            <div className="h-24 gradient-primary" />
+            <div className="h-20 bg-muted/30" />
             <CardContent className="relative pt-0">
               <div className="flex flex-col sm:flex-row items-center sm:items-end gap-4 -mt-12">
                 <div className="relative group">

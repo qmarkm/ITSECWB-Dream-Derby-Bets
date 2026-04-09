@@ -24,7 +24,7 @@ import { toast } from "sonner";
 const RaceDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUser } = useAuth();
 
   const [race, setRace] = useState<RaceEvent | null>(null);
   const [bids, setBids] = useState<Bid[]>([]);
@@ -92,7 +92,8 @@ const RaceDetail: React.FC = () => {
     );
   }
 
-  const myBid = bids.find((b) => b.bidder === user?.id);
+  const myBid = bids.find((b) => user?.id != null && b.bidder === user.id)
+    ?? bids.find((b) => b.bidder_username === user?.username);
   const isOpen = race.status === "open";
   const isScheduled = race.status === "scheduled";
   const isCompleted = race.status === "completed";
@@ -117,6 +118,7 @@ const RaceDetail: React.FC = () => {
       setRace((prev) => prev ? { ...prev, bid_count: prev.bid_count + 1 } : prev);
       setBetAmount("");
       setSelectedParticipant(null);
+      refreshUser();
       toast.success("Bet placed!");
     } catch (err: any) {
       const msg = err?.response?.data?.amount?.[0]
@@ -139,6 +141,7 @@ const RaceDetail: React.FC = () => {
       const updated = await updateBid(myBid.id, amount);
       setBids((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
       setIsEditingBid(false);
+      refreshUser();
       toast.success("Bet updated.");
     } catch (err: any) {
       const msg = err?.response?.data?.amount?.[0]
@@ -158,6 +161,7 @@ const RaceDetail: React.FC = () => {
       setBids((prev) => prev.filter((b) => b.id !== myBid.id));
       setRace((prev) => prev ? { ...prev, bid_count: Math.max(0, prev.bid_count - 1) } : prev);
       setCancelConfirm(false);
+      refreshUser();
       toast.success("Bid cancelled and refunded.");
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "Failed to cancel bid.");
@@ -170,10 +174,11 @@ const RaceDetail: React.FC = () => {
     if (!raceId || !selectedEnrollId) return;
     setIsEnrolling(true);
     try {
-      const newParticipant = await enrollUmamusume(raceId, selectedEnrollId);
-      setRace((prev) =>
-        prev ? { ...prev, participants: [...prev.participants, newParticipant] } : prev
-      );
+      await enrollUmamusume(raceId, selectedEnrollId);
+      // Re-fetch full race data so participant details (name, stats, avatar) are complete
+      const { race: updated, bids: updatedBids } = await getRaceEvent(raceId);
+      setRace(updated);
+      setBids(updatedBids);
       setSelectedEnrollId(null);
       setEnrollConfirm(false);
       toast.success("Umamusume enrolled!");

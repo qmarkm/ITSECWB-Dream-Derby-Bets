@@ -12,7 +12,6 @@ from apps.umamusume.models import Skill, Umas
 GAME_DATA = [
     {
         'name': 'Matikanetannhauser',
-        'avatar_url': 'https://static.wikia.nocookie.net/umamusume/images/5/5c/Matikane_Tannhauser_Icon.png',
         'skills': [
             {
                 'name': 'Go, Go, Mun!',
@@ -26,7 +25,6 @@ GAME_DATA = [
     },
     {
         'name': 'Oguri Cap',
-        'avatar_url': 'https://static.wikia.nocookie.net/umamusume/images/b/b0/Oguri_Cap_Icon.png',
         'skills': [
             {
                 'name': 'Triumphant Pulse',
@@ -40,7 +38,6 @@ GAME_DATA = [
     },
     {
         'name': 'Maruzensky',
-        'avatar_url': 'https://static.wikia.nocookie.net/umamusume/images/4/4d/Maruzensky_Icon.png',
         'skills': [
             {
                 'name': 'LP1211-M',
@@ -54,7 +51,6 @@ GAME_DATA = [
     },
     {
         'name': 'Seiun Sky',
-        'avatar_url': 'https://static.wikia.nocookie.net/umamusume/images/a/a9/Seiun_Sky_Icon.png',
         'skills': [
             {
                 'name': 'Angling and Scheming',
@@ -68,7 +64,6 @@ GAME_DATA = [
     },
     {
         'name': 'Super Creek',
-        'avatar_url': 'https://static.wikia.nocookie.net/umamusume/images/f/f8/Super_Creek_Icon.png',
         'skills': [
             {
                 'name': 'Purity of Heart',
@@ -82,7 +77,6 @@ GAME_DATA = [
     },
     {
         'name': 'Manhattan Cafe',
-        'avatar_url': 'https://static.wikia.nocookie.net/umamusume/images/3/3d/Manhattan_Cafe_Icon.png',
         'skills': [
             {
                 'name': 'Chasing After You',
@@ -119,10 +113,6 @@ class Command(BaseCommand):
 
         for entry in GAME_DATA:
             uma, uma_created = Umas.objects.get_or_create(name=entry['name'])
-
-            if entry.get('avatar_url') and not uma.avatar_url:
-                uma.avatar_url = entry['avatar_url']
-                uma.save()
 
             if uma_created:
                 created_umas += 1

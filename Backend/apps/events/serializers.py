@@ -5,6 +5,7 @@ from django.db import transaction
 from rest_framework import serializers
 from .models import Track, RaceEvent, Results, Bids
 from ..umamusume.serializers import UmamusumeSerializer
+from ..utils.validators import validate_uploaded_image
 
 # Align with users app balance transaction cap
 MAX_BID_AMOUNT = Decimal('1000000')
@@ -19,7 +20,6 @@ _RACE_STATUS_ORDER = (
 
 _HTML_PATTERN = re.compile(r'<[^>]+>')
 _XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
-_VALID_URL_SCHEMES = ('http://', 'https://')
 _NUMERIC_ONLY = re.compile(r'^\d+$')
 _ISO8601_DT = re.compile(
     r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})?$'
@@ -51,18 +51,30 @@ def _validate_race_datetimes(*, opening_dt, active_dt, race_start_dt, race_end_d
 
 
 class TrackSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Track
-        fields = ['id', 'name', 'image', 'distance', 'dist_category', 'direction', 'track_type']
+        fields = ['id', 'name', 'image', 'image_url', 'distance', 'dist_category', 'direction', 'track_type']
         read_only_fields = ['id']
+
+    def get_image_url(self, obj):
+        if obj.image and hasattr(obj.image, 'url'):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
 
 
 class TrackWriteSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = Track
         fields = ['name', 'image', 'distance', 'dist_category', 'direction', 'track_type']
         extra_kwargs = {
-            'image': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'image': {'required': False},
             'distance': {'required': False, 'allow_blank': True},
         }
 
@@ -84,20 +96,10 @@ class TrackWriteSerializer(serializers.ModelSerializer):
             pass
 
     def validate_image(self, value):
-        try:
-            if not value:
-                return value
-            if not value.startswith(_VALID_URL_SCHEMES):
-                raise serializers.ValidationError("Invalid image URL.")
-            if _XSS_PATTERN.search(value):
-                raise serializers.ValidationError("Invalid image URL.")
+        if not value:
             return value
-        except serializers.ValidationError:
-            raise
-        except Exception:
-            raise serializers.ValidationError("Invalid image URL.")
-        finally:
-            pass
+        validate_uploaded_image(value)
+        return value
 
     def validate_distance(self, value):
         try:
