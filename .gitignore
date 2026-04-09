@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!Frontend/.env.production
 master.key
 node_modules
 .claude
