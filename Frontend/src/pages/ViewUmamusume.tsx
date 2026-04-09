@@ -91,7 +91,12 @@ const ViewUmamusume: React.FC = () => {
     );
   }
 
-  const isOwner = user && umamusume.user === user.id;
+  const isOwner =
+    !!user &&
+    (
+      (typeof user.id === "number" && umamusume.user === user.id) ||
+      (!!umamusume.user_username && umamusume.user_username === user.username)
+    );
   const aptitudes = umamusume.aptitudes;
   const skills = umamusume.skills ?? [];
 
