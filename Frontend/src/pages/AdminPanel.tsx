@@ -840,7 +840,7 @@ const AdminPanel: React.FC = () => {
     setIsSavingLogging(true);
     try {
       await updateLoggingSettings({ syslog_host: syslogHost, syslog_port: port || 514 });
-      toast.success('Logging settings updated. Restart the server to apply.');
+      toast.success('Logging settings updated.');
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to update logging settings');
     } finally {
