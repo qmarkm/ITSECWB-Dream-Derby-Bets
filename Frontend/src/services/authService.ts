@@ -35,7 +35,7 @@ export interface UserProfile {
 }
 
 export interface User {
-  id: number;
+  id?: number;
   username: string;
   email?: string;
   full_name?: string;
@@ -43,7 +43,6 @@ export interface User {
   is_active?: boolean;
   is_staff?: boolean;
   is_superuser?: boolean;
-  can_access_admin?: boolean;
   account_status?: 'active' | 'disabled';
   access_tier?: 'admin' | 'staff' | 'user';
   date_joined: string;

@@ -72,6 +72,7 @@ const AdminPanel: React.FC = () => {
   const [isSavingResults, setIsSavingResults] = useState(false);
 
   const [users, setUsers] = useState<BackendUser[]>([]);
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editingUser, setEditingUser] = useState<BackendUser | null>(null);
@@ -135,7 +136,7 @@ const AdminPanel: React.FC = () => {
     password_confirm: "",
   });
 
-  const isAdmin = user?.isStaff && user?.isSuperuser;
+  const isAdmin = hasAdminAccess;
 
   // Validation patterns — mirror backend regex rules exactly
   const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/;
@@ -168,10 +169,14 @@ const AdminPanel: React.FC = () => {
         return;
       }
 
-      if (result.user.isStaff && result.user.isSuperuser) {
+      try {
+        const adminUsers = await authService.adminGetUsers();
+        setUsers(adminUsers);
+        setHasAdminAccess(true);
         toast.success("Admin login successful");
         navigate("/adminpanel");
-      } else {
+      } catch {
+        setHasAdminAccess(false);
         toast.error("You do not have admin access");
       }
     } catch {
@@ -193,6 +198,16 @@ const AdminPanel: React.FC = () => {
       setIsUsersLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHasAdminAccess(false);
+      return;
+    }
+    authService.adminGetUsers()
+      .then(() => setHasAdminAccess(true))
+      .catch(() => setHasAdminAccess(false));
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && isAdmin && activeSection === "users") {

@@ -78,7 +78,12 @@ def admin_user_list(request):
             user = serializer.save()
             create_login_attempts(user)
             return Response(AdminUserReadSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning(
+            "Rejected admin user create by user_id=%s: validation errors=%s",
+            request.user.pk,
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -112,7 +117,11 @@ def create_profile(request):
                 return Response(CurrentUserSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
             user.delete()
             return Response({'error': 'Registration failed. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning(
+            "Rejected registration request: validation errors=%s",
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -280,7 +289,12 @@ def update_profile(request):
         if serializer.is_valid():
             serializer.save()
             return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning(
+            "Rejected profile update by user_id=%s: validation errors=%s",
+            request.user.pk,
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -296,7 +310,12 @@ def update_account(request):
         if serializer.is_valid():
             serializer.save()
             return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning(
+            "Rejected account update by user_id=%s: validation errors=%s",
+            request.user.pk,
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

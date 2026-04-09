@@ -132,13 +132,12 @@ class PublicUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id',
             'username',
             'full_name',
             'date_joined',
             'profile',
         ]
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ['date_joined']
 
 
 class CurrentUserSerializer(serializers.ModelSerializer):
@@ -146,25 +145,19 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     Serializer for the authenticated user's own account payload.
     Keeps self-service fields needed by the app but does not expose raw admin flags.
     """
+    # Self profile can include private financial/stat fields used by own dashboard.
     profile = UserProfileSerializer(read_only=True)
-    can_access_admin = serializers.SerializerMethodField()
-
-    def get_can_access_admin(self, obj):
-        return bool(obj.is_staff and obj.is_superuser)
 
     class Meta:
         model = User
         fields = [
-            'id',
             'username',
             'email',
             'full_name',
-            'phone_number',
             'date_joined',
-            'can_access_admin',
             'profile',
         ]
-        read_only_fields = ['id', 'date_joined', 'can_access_admin']
+        read_only_fields = ['date_joined']
 
 
 class AdminUserReadSerializer(serializers.ModelSerializer):

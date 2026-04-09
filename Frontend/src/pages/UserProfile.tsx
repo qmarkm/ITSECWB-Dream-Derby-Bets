@@ -34,7 +34,7 @@ const UserProfile: React.FC = () => {
         // Get user's umamusumes from localStorage and mock data
         const storedUmas: Umamusume[] = JSON.parse(localStorage.getItem("userUmamusumes") || "[]");
         const allUmas = [...mockUmamusumes, ...storedUmas];
-        const myUmas = allUmas.filter(uma => uma.ownerId === user.id || uma.owner === user.username);
+        const myUmas = allUmas.filter((uma) => uma.owner === user.username);
         setUserUmamusumes(myUmas);
       } catch (error) {
         console.error("Failed to fetch user profile:", error);

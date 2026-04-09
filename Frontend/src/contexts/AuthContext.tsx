@@ -4,7 +4,7 @@ import type { User as BackendUser, ProfileUpdateData, AccountUpdateData } from "
 
 // Frontend User interface that matches our UI needs
 export interface User {
-  id: number;
+  id?: number;
   username: string;
   email: string;
   fullName?: string;
@@ -52,9 +52,9 @@ const mapBackendUser = (backendUser: BackendUser): User => ({
   profilePicture: backendUser.profile.avatar_url || undefined,
   balance: Number(backendUser.profile.balance ?? 0),
   createdAt: backendUser.date_joined,
-  // Backend now returns can_access_admin for self payloads to avoid exposing raw flags.
-  isStaff: Boolean(backendUser.can_access_admin || backendUser.is_staff),
-  isSuperuser: Boolean(backendUser.can_access_admin || backendUser.is_superuser),
+  // Do not trust/expect admin flags from generic user payloads.
+  isStaff: Boolean(backendUser.is_staff),
+  isSuperuser: Boolean(backendUser.is_superuser),
   profile: {
     bio: backendUser.profile.bio,
     favorite_umamusume: backendUser.profile.favorite_umamusume,
