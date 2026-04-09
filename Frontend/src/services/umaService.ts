@@ -123,15 +123,13 @@ export const createUma = async (data: NewUmaProfile): Promise<Uma> => {
 
     if (data.avatar instanceof File) {
         formData.append('avatar', data.avatar);
-    } else if (typeof data.avatar === 'string' && data.avatar) {
-        formData.append('avatar_url', data.avatar);
     }
 
     data.skill_ids.forEach(id => formData.append('skill_ids', id.toString()));
     formData.append('aptitudes', JSON.stringify(data.aptitudes));
 
     const response = await apiClient.post<Uma>('/api/umamusume/create/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': undefined }
     });
     return response.data;
 }
@@ -141,13 +139,35 @@ export const deleteUma = async (id: number): Promise<void> => {
 };
 
 export const updateUma = async (id: number, data: Partial<NewUmaProfile>): Promise<Uma> => {
+    if (data.avatar instanceof File) {
+        const formData = new FormData();
+        if (data.name !== undefined) formData.append('name', data.name);
+        if (data.speed !== undefined) formData.append('speed', data.speed.toString());
+        if (data.stamina !== undefined) formData.append('stamina', data.stamina.toString());
+        if (data.power !== undefined) formData.append('power', data.power.toString());
+        if (data.guts !== undefined) formData.append('guts', data.guts.toString());
+        if (data.wit !== undefined) formData.append('wit', data.wit.toString());
+        formData.append('avatar', data.avatar);
+        if (data.skill_ids) {
+            data.skill_ids.forEach(s_id => formData.append('skill_ids', s_id.toString()));
+        }
+        if (data.aptitudes) {
+            formData.append('aptitudes', JSON.stringify(data.aptitudes));
+        }
+
+        const response = await apiClient.patch<Uma>(`/api/umamusume/update/${id}/`, formData, {
+            headers: { 'Content-Type': undefined }
+        });
+        return response.data;
+    }
+
     const response = await apiClient.patch<Uma>(`/api/umamusume/update/${id}/`, data);
     return response.data;
 };
 
 export interface BaseUmaCreateData {
     name: string;
-    avatar_url?: string;
+    avatar?: File;
 }
 
 export interface CsvImportError {
@@ -164,7 +184,12 @@ export interface CsvImportResult {
 }
 
 export const adminCreateBaseUma = async (data: BaseUmaCreateData): Promise<BaseUma> => {
-    const response = await apiClient.post<BaseUma>('/api/umamusume/uma/create/', data);
+    const formData = new FormData();
+    formData.append('name', data.name);
+    if (data.avatar) formData.append('avatar', data.avatar);
+    const response = await apiClient.post<BaseUma>('/api/umamusume/uma/create/', formData, {
+        headers: { 'Content-Type': undefined }
+    });
     return response.data;
 };
 
@@ -172,7 +197,7 @@ export const adminImportUmasCSV = async (file: File): Promise<CsvImportResult> =
     const formData = new FormData();
     formData.append('file', file);
     const response = await apiClient.post<CsvImportResult>('/api/umamusume/uma/import/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { 'Content-Type': undefined }
     });
     return response.data;
 };
@@ -191,7 +216,12 @@ export const adminAssignSkillToUma = async (skillId: number, umaId: number): Pro
 };
 
 export const adminUpdateUma = async (id: number, data: Partial<BaseUmaCreateData>): Promise<BaseUma> => {
-    const response = await apiClient.patch<BaseUma>(`/api/umamusume/uma/${id}/update/`, data);
+    const formData = new FormData();
+    if (data.name !== undefined) formData.append('name', data.name);
+    if (data.avatar) formData.append('avatar', data.avatar);
+    const response = await apiClient.patch<BaseUma>(`/api/umamusume/uma/${id}/update/`, formData, {
+        headers: { 'Content-Type': undefined }
+    });
     return response.data;
 };
 

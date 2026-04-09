@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, User, Sparkles, Phone, Image, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, Sparkles, Phone, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +28,6 @@ const Auth: React.FC = () => {
   const [signupEmail, setSignupEmail] = useState("");
   const [signupFullName, setSignupFullName] = useState("");
   const [signupPhoneNumber, setSignupPhoneNumber] = useState("");
-  const [signupAvatarUrl, setSignupAvatarUrl] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
 
@@ -113,8 +112,7 @@ const Auth: React.FC = () => {
         signupPassword,
         signupConfirmPassword,
         signupFullName || undefined,
-        signupPhoneNumber || undefined,
-        signupAvatarUrl || undefined
+        signupPhoneNumber || undefined
       );
 
       if (result.success) {
@@ -275,21 +273,6 @@ const Auth: React.FC = () => {
                         placeholder="+1 (555) 123-4567"
                         value={signupPhoneNumber}
                         onChange={(e) => setSignupPhoneNumber(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-avatar">Profile Photo URL</Label>
-                    <div className="relative">
-                      <Image className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-avatar"
-                        type="url"
-                        placeholder="https://example.com/photo.jpg"
-                        value={signupAvatarUrl}
-                        onChange={(e) => setSignupAvatarUrl(e.target.value)}
                         className="pl-10"
                       />
                     </div>

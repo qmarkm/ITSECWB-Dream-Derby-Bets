@@ -12,7 +12,6 @@ export interface RegisterCredentials {
   phone_number?: string;
   password: string;
   password_confirm: string;
-  avatar_url?: string;
 }
 
 export interface LoginResponse {
@@ -51,7 +50,6 @@ export interface User {
 
 export interface ProfileUpdateData {
   bio?: string;
-  avatar_url?: string;
   favorite_umamusume?: string;
 }
 
@@ -106,7 +104,7 @@ export const getUserProfile = async (username: string): Promise<User> => {
 };
 
 /**
- * Update current user's profile (bio, avatar_url, favorite_umamusume)
+ * Update current user's profile (bio, favorite_umamusume)
  */
 export const updateProfile = async (data: ProfileUpdateData): Promise<User> => {
   const response = await apiClient.patch<User>('/api/users/profile/update/', data);

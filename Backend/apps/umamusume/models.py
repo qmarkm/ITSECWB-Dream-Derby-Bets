@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 
 class Umas(models.Model):
     name = models.CharField(max_length=100)
-    avatar_url = models.URLField(blank=True)
+    avatar = models.ImageField(upload_to='uma_avatars/', blank=True, null=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -30,7 +30,7 @@ class Umamusume(models.Model):
     # Basic Information
     uma = models.ForeignKey(Umas, on_delete=models.CASCADE, related_name='umamusume', null=True)
     name = models.CharField(max_length=100)
-    avatar_url = models.URLField(blank=True, null=True)
+    avatar = models.ImageField(upload_to='umamusume_avatars/', blank=True, null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='umamusumes')
 
     # Statistics

@@ -149,7 +149,7 @@ const CreateUmamusume: React.FC = () => {
     // Create the data object that matches NewUmaProfile
     const newUmaProfile: NewUmaProfile = {
       name,
-      avatar: pictureFile || selectedBaseUma?.avatar_url || null,
+      avatar: pictureFile || null,
       base_uma_id: selectedBaseUma?.id || null,
       speed: stats.speed,
       stamina: stats.stamina,

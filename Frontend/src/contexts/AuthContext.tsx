@@ -36,7 +36,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
-  signup: (username: string, email: string, password: string, passwordConfirm: string, fullName?: string, phoneNumber?: string, avatarUrl?: string) => Promise<{ success: boolean; error?: string }>;
+  signup: (username: string, email: string, password: string, passwordConfirm: string, fullName?: string, phoneNumber?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   updateProfile: (data: ProfileUpdateData) => Promise<void>;
@@ -163,8 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string,
     passwordConfirm: string,
     fullName?: string,
-    phoneNumber?: string,
-    avatarUrl?: string
+    phoneNumber?: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       // Call register API
@@ -175,7 +174,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password_confirm: passwordConfirm,
         full_name: fullName,
         phone_number: phoneNumber,
-        avatar_url: avatarUrl,
       });
 
       // After registration, log the user in

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
-import { ArrowLeft, X, Check, Trash2 } from "lucide-react";
+import { ArrowLeft, X, Check, Trash2, Upload } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,13 +37,16 @@ const DEFAULT_APTITUDES: AptitudeCreationData = {
 const EditUmamusume: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const { user, isAuthenticated, isAuthLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [originalUma, setOriginalUma] = useState<Uma | null>(null);
   const [notFound, setNotFound] = useState(false);
+
+  const [pictureFile, setPictureFile] = useState<File | null>(null);
+  const [picturePreview, setPicturePreview] = useState<string>("");
 
   const [name, setName] = useState("");
   const [skillSearch, setSkillSearch] = useState("");
@@ -105,6 +108,22 @@ const EditUmamusume: React.FC = () => {
     setStats((prev) => ({ ...prev, [stat]: numValue }));
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.match(/^image\/(png|gif|jpeg|jpg)$/)) {
+        toast.error("Please upload a valid image file");
+        return;
+      }
+      setPictureFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPicturePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const addSkill = (skillId: number) => {
     setSelectedSkillIds((prev) => [...prev, skillId]);
     setSkillSearch("");
@@ -128,6 +147,7 @@ const EditUmamusume: React.FC = () => {
         ...stats,
         skill_ids: selectedSkillIds,
         aptitudes,
+        ...(pictureFile && { avatar: pictureFile })
       });
       toast.success("Umamusume updated!");
       navigate(`/umamusume/${id}`);
@@ -215,16 +235,40 @@ const EditUmamusume: React.FC = () => {
                 />
               </div>
 
-              {originalUma.avatar_url && (
-                <div className="space-y-2">
-                  <Label>Current Avatar</Label>
-                  <img
-                    src={originalUma.avatar_url}
-                    alt={originalUma.name}
-                    className="h-16 w-16 rounded-lg object-cover border"
-                  />
+              <div className="space-y-4">
+                <Label>Avatar Image</Label>
+                <div className="flex items-center gap-4">
+                  {picturePreview || originalUma.avatar_url ? (
+                    <div className="relative">
+                      <img
+                        src={picturePreview || originalUma.avatar_url || ''}
+                        alt="Preview"
+                        className="h-16 w-16 rounded-lg object-cover border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPicturePreview("");
+                          setPictureFile(null);
+                        }}
+                        className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 hover:border-primary transition-colors">
+                      <Upload className="h-6 w-6 text-muted-foreground" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
 

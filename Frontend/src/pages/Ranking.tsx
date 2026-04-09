@@ -33,7 +33,7 @@ const getRankStyle = (rank: number): { badge: string; row: string } => {
 };
 
 const Ranking: React.FC = () => {
-  const { isAuthenticated, isAuthLoading } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [umas, setUmas] = useState<Uma[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
