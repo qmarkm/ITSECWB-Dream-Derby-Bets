@@ -67,8 +67,8 @@ from .serializers import (
     UserUpdateSerializer,
 )
 
-MAX_LOGIN_ATTEMPTS = 5
-LOCKOUT_DURATION_MINUTES = 15
+# Constants for session/security config
+SESSION_TIMEOUT_MINUTES = 30
 MAX_TRANSACTION_AMOUNT = Decimal('1000000')
 logger = logging.getLogger('django.request')
 
@@ -289,10 +289,13 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             try:
                 response = super().post(request, *args, **kwargs)
             except AuthenticationFailed:
+                max_login_attempts = int(SystemSettings.get_setting('MAX_LOGIN_ATTEMPTS', 5))
+                lockout_duration = int(SystemSettings.get_setting('LOCKOUT_DURATION_MINUTES', 15))
+                
                 login_attempt.login_attempts += 1
-                if login_attempt.login_attempts >= MAX_LOGIN_ATTEMPTS:
+                if login_attempt.login_attempts >= max_login_attempts:
                     login_attempt.locked_status = True
-                    login_attempt.unlocks_on = timezone.now() + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+                    login_attempt.unlocks_on = timezone.now() + timedelta(minutes=lockout_duration)
                     login_attempt.save()
                     security_log.error(
                         'ACCOUNT_LOCKED | user=%s ip=%s attempts=%d unlocks_at=%s',
@@ -303,7 +306,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                     login_attempt.save()
                     security_log.warning(
                         'LOGIN_FAILED | user=%s ip=%s attempts=%d/%d',
-                        username, ip, login_attempt.login_attempts, MAX_LOGIN_ATTEMPTS,
+                        username, ip, login_attempt.login_attempts, max_login_attempts,
                     )
                 return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -552,6 +555,39 @@ def manage_system_settings(request):
             warning_minutes = request.data.get('warning_minutes')
             syslog_host = request.data.get('syslog_host')
             syslog_port = request.data.get('syslog_port')
+            
+            # Additional dynamic settings
+            max_login_attempts = request.data.get('max_login_attempts')
+            lockout_duration_minutes = request.data.get('lockout_duration_minutes')
+            initial_balance = request.data.get('initial_balance')
+            winning_multiplier = request.data.get('winning_multiplier')
+            consolation_multiplier = request.data.get('consolation_multiplier')
+            # CSV Import settings
+            csv_max_size_kb = request.data.get('csv_max_size_kb')
+            csv_max_rows = request.data.get('csv_max_rows')
+
+            if consolation_multiplier is not None:
+                try:
+                    val = str(float(consolation_multiplier))
+                    SystemSettings.set_setting('CONSOLATION_MULTIPLIER', val, user=request.user, description='Consolation payout multiplier')
+                except ValueError:
+                    return Response({'error': 'Invalid Consolation Multiplier'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if csv_max_size_kb is not None:
+                try:
+                    val = int(csv_max_size_kb)
+                    if val < 1: raise ValueError()
+                    SystemSettings.set_setting('CSV_MAX_SIZE_KB', val, user=request.user, description='Maximum CSV upload size (KB)')
+                except ValueError:
+                    return Response({'error': 'Invalid CSV Max Size'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if csv_max_rows is not None:
+                try:
+                    val = int(csv_max_rows)
+                    if val < 1: raise ValueError()
+                    SystemSettings.set_setting('CSV_MAX_ROWS', val, user=request.user, description='Maximum rows in CSV import')
+                except ValueError:
+                    return Response({'error': 'Invalid CSV Max Rows'}, status=status.HTTP_400_BAD_REQUEST)
 
             if timeout_minutes is not None:
                 try:

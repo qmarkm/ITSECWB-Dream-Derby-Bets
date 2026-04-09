@@ -11,7 +11,7 @@ class SkillSerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill
         fields = ['id', 'name', 'description']
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'name', 'description']
 
 
 class UmaSerializer(serializers.ModelSerializer):
@@ -21,7 +21,7 @@ class UmaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Umas
         fields = ['id', 'name', 'avatar_url', 'is_active', 'skills']
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'name', 'avatar_url', 'is_active', 'skills']
 
     def get_avatar_url(self, obj):
         if obj.avatar and hasattr(obj.avatar, 'url'):
@@ -77,7 +77,10 @@ class AptitudeSerializer(serializers.ModelSerializer):
             'short', 'mile', 'medium', 'long',
             'front', 'pace', 'late', 'end'
         ]
-        read_only_fields = ['id']
+        read_only_fields = [
+            'id', 'turf', 'dirt', 'short', 'mile', 'medium', 'long',
+            'front', 'pace', 'late', 'end'
+        ]
 
 
 class UmamusumeSerializer(serializers.ModelSerializer):
@@ -121,7 +124,12 @@ class UmamusumeSerializer(serializers.ModelSerializer):
             'skills', 'aptitudes', 'created_at',
             'races_won', 'races_lost',
         ]
-        read_only_fields = ['id', 'user', 'created_at']
+        read_only_fields = [
+            'id', 'name', 'avatar_url', 'user', 'user_username',
+            'base_uma', 'speed', 'stamina', 'power', 'guts', 'wit',
+            'skills', 'aptitudes', 'created_at',
+            'races_won', 'races_lost'
+        ]
 
 
 class AptitudeUpdateSerializer(serializers.ModelSerializer):
@@ -219,6 +227,10 @@ class UmamusumeCreateSerializer(serializers.ModelSerializer):
         try:
             skill_ids = validated_data.pop('skill_ids', None)
             aptitudes_data = validated_data.pop('aptitudes', None)
+            
+            # Prevent mass assignment of the base character
+            if 'uma' in validated_data:
+                validated_data.pop('uma')
 
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
@@ -283,6 +295,7 @@ class SkillAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill
         fields = ['id', 'name', 'description', 'uma_id', 'uma_name']
+        read_only_fields = ['id', 'name', 'description', 'uma_id', 'uma_name']
 
 
 class SkillUpdateSerializer(serializers.ModelSerializer):

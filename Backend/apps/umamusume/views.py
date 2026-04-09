@@ -374,9 +374,12 @@ def import_umas_csv(request):
         if not csv_file.name.lower().endswith('.csv'):
             return Response({'error': 'File must be a .csv file.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        MAX_SIZE = 50 * 1024
+        from ..users.models import SystemSettings
+        max_size_kb = int(SystemSettings.get_setting('CSV_MAX_SIZE_KB', 50))
+        MAX_SIZE = max_size_kb * 1024
+        
         if csv_file.size > MAX_SIZE:
-            return Response({'error': 'File too large. Maximum size is 50KB.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'File too large. Maximum size is {max_size_kb}KB.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             raw_bytes = csv_file.read()
@@ -393,7 +396,7 @@ def import_umas_csv(request):
         skipped_count = 0
         errors = []
 
-        MAX_ROWS = 200
+        MAX_ROWS = int(SystemSettings.get_setting('CSV_MAX_ROWS', 200))
         for row_number, row in enumerate(reader, start=2):
             if row_number - 1 > MAX_ROWS:
                 errors.append({'row': row_number, 'name': '(skipped)', 'reason': f'Row limit of {MAX_ROWS} exceeded.'})
