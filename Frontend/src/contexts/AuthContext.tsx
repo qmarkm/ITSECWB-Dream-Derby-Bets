@@ -8,7 +8,7 @@ import { getSessionSettings, SessionSettings } from "@/services/settingsService"
 
 // Frontend User interface that matches our UI needs
 export interface User {
-  id: number;
+  id?: number;
   username: string;
   email: string;
   fullName?: string;
@@ -36,7 +36,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
-  signup: (username: string, email: string, password: string, passwordConfirm: string, fullName?: string, phoneNumber?: string, avatarUrl?: string) => Promise<{ success: boolean; error?: string }>;
+  signup: (username: string, email: string, password: string, passwordConfirm: string, fullName?: string, phoneNumber?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   updateProfile: (data: ProfileUpdateData) => Promise<void>;
@@ -50,24 +50,25 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const mapBackendUser = (backendUser: BackendUser): User => ({
   id: backendUser.id,
   username: backendUser.username,
-  email: backendUser.email,
+  email: backendUser.email || "",
   fullName: backendUser.full_name,
   phoneNumber: backendUser.phone_number,
   profilePicture: backendUser.profile.avatar_url || undefined,
-  balance: Number(backendUser.profile.balance),
+  balance: Number(backendUser.profile.balance ?? 0),
   createdAt: backendUser.date_joined,
-  isStaff: backendUser.is_staff,
-  isSuperuser: backendUser.is_superuser,
+  // Do not trust/expect admin flags from generic user payloads.
+  isStaff: Boolean(backendUser.is_staff),
+  isSuperuser: Boolean(backendUser.is_superuser),
   profile: {
     bio: backendUser.profile.bio,
     favorite_umamusume: backendUser.profile.favorite_umamusume,
-    total_bets_placed: backendUser.profile.total_bets_placed,
-    total_bets_won: backendUser.profile.total_bets_won,
-    total_bets_lost: backendUser.profile.total_bets_lost,
-    total_winnings: Number(backendUser.profile.total_winnings),
-    total_losses: Number(backendUser.profile.total_losses),
-    win_rate: backendUser.profile.win_rate,
-    net_profit: Number(backendUser.profile.net_profit),
+    total_bets_placed: backendUser.profile.total_bets_placed ?? 0,
+    total_bets_won: backendUser.profile.total_bets_won ?? 0,
+    total_bets_lost: backendUser.profile.total_bets_lost ?? 0,
+    total_winnings: Number(backendUser.profile.total_winnings ?? 0),
+    total_losses: Number(backendUser.profile.total_losses ?? 0),
+    win_rate: backendUser.profile.win_rate ?? 0,
+    net_profit: Number(backendUser.profile.net_profit ?? 0),
   },
 });
 
@@ -162,8 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string,
     passwordConfirm: string,
     fullName?: string,
-    phoneNumber?: string,
-    avatarUrl?: string
+    phoneNumber?: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       // Call register API
@@ -174,7 +174,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password_confirm: passwordConfirm,
         full_name: fullName,
         phone_number: phoneNumber,
-        avatar_url: avatarUrl,
       });
 
       // After registration, log the user in

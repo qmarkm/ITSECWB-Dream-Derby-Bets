@@ -22,7 +22,7 @@ class Track(models.Model):
         dirt = 'dirt', _('dirt')
 
     name = models.CharField(max_length=100)
-    image = models.URLField(blank=True, null=True)
+    image = models.ImageField(upload_to='track_images/', blank=True, null=True)
     distance = models.CharField(max_length=10)
     dist_category = models.CharField(max_length=10, choices=DistanceCategory.choices, default=DistanceCategory.sprint)
     direction = models.CharField(max_length=10, choices=Direction.choices, default=Direction.right)

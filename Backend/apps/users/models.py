@@ -133,7 +133,10 @@ def create_user_profile(sender, instance, created, **kwargs):
     This is called via Django signals.
     """
     if created:
-        UserProfile.objects.create(user=instance)
+        from decimal import Decimal
+        initial_balance_setting = SystemSettings.get_setting('INITIAL_BALANCE', 5000.00)
+        initial_balance = Decimal(str(initial_balance_setting))
+        UserProfile.objects.create(user=instance, balance=initial_balance)
 
 
 @receiver(post_save, sender=User)

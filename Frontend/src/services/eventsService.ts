@@ -9,6 +9,7 @@ export interface Track {
     id: number;
     name: string;
     image: string | null;
+    image_url: string | null;
     distance: string;
     dist_category: DistCategory;
     direction: TrackDirection;
@@ -17,7 +18,7 @@ export interface Track {
 
 export interface TrackWriteData {
     name: string;
-    image?: string;
+    image?: File | null;
     distance?: string;
     dist_category: DistCategory;
     direction: TrackDirection;
@@ -30,8 +31,14 @@ export interface RaceParticipant {
     umamusume_data: {
         id: number;
         name: string;
-        image: string | null;
-    };
+        avatar_url: string | null;
+        speed: number;
+        stamina: number;
+        power: number;
+        guts: number;
+        wit: number;
+        user_username: string;
+    } | null;
     place: number | null;
 }
 
@@ -79,12 +86,30 @@ export const adminGetTracks = async (): Promise<Track[]> => {
 };
 
 export const adminCreateTrack = async (data: TrackWriteData): Promise<Track> => {
-    const response = await apiClient.post<Track>('/api/events/tracks/create/', data);
+    const formData = new FormData();
+    formData.append('name', data.name);
+    if (data.image) formData.append('image', data.image);
+    if (data.distance) formData.append('distance', data.distance);
+    formData.append('dist_category', data.dist_category);
+    formData.append('direction', data.direction);
+    formData.append('track_type', data.track_type);
+    const response = await apiClient.post<Track>('/api/events/tracks/create/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
 };
 
 export const adminUpdateTrack = async (id: number, data: Partial<TrackWriteData>): Promise<Track> => {
-    const response = await apiClient.patch<Track>(`/api/events/tracks/${id}/update/`, data);
+    const formData = new FormData();
+    if (data.name !== undefined) formData.append('name', data.name);
+    if (data.image) formData.append('image', data.image);
+    if (data.distance !== undefined) formData.append('distance', data.distance);
+    if (data.dist_category !== undefined) formData.append('dist_category', data.dist_category);
+    if (data.direction !== undefined) formData.append('direction', data.direction);
+    if (data.track_type !== undefined) formData.append('track_type', data.track_type);
+    const response = await apiClient.patch<Track>(`/api/events/tracks/${id}/update/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
 };
 

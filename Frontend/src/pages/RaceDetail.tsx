@@ -24,7 +24,7 @@ import { toast } from "sonner";
 const RaceDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUser } = useAuth();
 
   const [race, setRace] = useState<RaceEvent | null>(null);
   const [bids, setBids] = useState<Bid[]>([]);
@@ -92,7 +92,8 @@ const RaceDetail: React.FC = () => {
     );
   }
 
-  const myBid = bids.find((b) => b.bidder === user?.id);
+  const myBid = bids.find((b) => user?.id != null && b.bidder === user.id)
+    ?? bids.find((b) => b.bidder_username === user?.username);
   const isOpen = race.status === "open";
   const isScheduled = race.status === "scheduled";
   const isCompleted = race.status === "completed";
@@ -117,6 +118,7 @@ const RaceDetail: React.FC = () => {
       setRace((prev) => prev ? { ...prev, bid_count: prev.bid_count + 1 } : prev);
       setBetAmount("");
       setSelectedParticipant(null);
+      refreshUser();
       toast.success("Bet placed!");
     } catch (err: any) {
       const msg = err?.response?.data?.amount?.[0]
@@ -139,6 +141,7 @@ const RaceDetail: React.FC = () => {
       const updated = await updateBid(myBid.id, amount);
       setBids((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
       setIsEditingBid(false);
+      refreshUser();
       toast.success("Bet updated.");
     } catch (err: any) {
       const msg = err?.response?.data?.amount?.[0]
@@ -158,6 +161,7 @@ const RaceDetail: React.FC = () => {
       setBids((prev) => prev.filter((b) => b.id !== myBid.id));
       setRace((prev) => prev ? { ...prev, bid_count: Math.max(0, prev.bid_count - 1) } : prev);
       setCancelConfirm(false);
+      refreshUser();
       toast.success("Bid cancelled and refunded.");
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "Failed to cancel bid.");
@@ -170,10 +174,11 @@ const RaceDetail: React.FC = () => {
     if (!raceId || !selectedEnrollId) return;
     setIsEnrolling(true);
     try {
-      const newParticipant = await enrollUmamusume(raceId, selectedEnrollId);
-      setRace((prev) =>
-        prev ? { ...prev, participants: [...prev.participants, newParticipant] } : prev
-      );
+      await enrollUmamusume(raceId, selectedEnrollId);
+      // Re-fetch full race data so participant details (name, stats, avatar) are complete
+      const { race: updated, bids: updatedBids } = await getRaceEvent(raceId);
+      setRace(updated);
+      setBids(updatedBids);
       setSelectedEnrollId(null);
       setEnrollConfirm(false);
       toast.success("Umamusume enrolled!");
@@ -287,13 +292,22 @@ const RaceDetail: React.FC = () => {
                             </span>
                           )}
                           <Avatar className="h-12 w-12 border-2 border-card">
-                            <AvatarImage src={p.umamusume_data?.image ?? undefined} />
+                            <AvatarImage src={p.umamusume_data?.avatar_url ?? undefined} />
                             <AvatarFallback className="bg-primary/10 text-primary">
                               {(p.umamusume_data?.name ?? "?").charAt(0)}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold truncate">{p.umamusume_data?.name ?? `Uma #${p.umamusume}`}</p>
+                            {p.umamusume_data && (
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                                <span>SPD {p.umamusume_data.speed}</span>
+                                <span>STA {p.umamusume_data.stamina}</span>
+                                <span>POW {p.umamusume_data.power}</span>
+                                <span>GUT {p.umamusume_data.guts}</span>
+                                <span>WIT {p.umamusume_data.wit}</span>
+                              </div>
+                            )}
                           </div>
                           {isOpen && !myBid && isSelected && (
                             <Badge variant="default" className="shrink-0">Selected</Badge>
@@ -467,9 +481,9 @@ const RaceDetail: React.FC = () => {
                         </div>
                       )}
                       {!selectedParticipant && (
-                        <p className="text-xs text-muted-foreground">
-                          Select a runner on the left, or leave unselected to bet on the race.
-                        </p>
+                        <div className="rounded-md border border-dashed border-primary/40 bg-primary/5 px-3 py-2 text-sm text-primary animate-pulse">
+                          Click a runner on the left to select who you're betting on
+                        </div>
                       )}
                       <div>
                         <Label htmlFor="bet-amount">Amount</Label>

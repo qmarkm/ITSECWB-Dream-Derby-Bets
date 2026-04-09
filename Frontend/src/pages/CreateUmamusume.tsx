@@ -68,11 +68,15 @@ const CreateUmamusume: React.FC = () => {
     uma => uma.name.toLowerCase().includes(baseUmaSearch.toLowerCase())
   );
 
-  // Filter skills from backend
+  const baseUmaSkills = selectedBaseUma?.skills ?? [];
+  const baseUmaSkillIds = new Set(baseUmaSkills.map(s => s.id));
+
+  // Filter skills from backend — exclude base Uma's skills and already-selected skills
   const filteredSkills = skills.filter(
     skill =>
       skill.name.toLowerCase().includes(skillSearch.toLowerCase()) &&
-      !selectedSkills.some(s => s.id === skill.id)
+      !selectedSkills.some(s => s.id === skill.id) &&
+      !baseUmaSkillIds.has(skill.id)
   );
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,7 +164,7 @@ const CreateUmamusume: React.FC = () => {
     const success = await create(newUmaProfile);
 
     if (success) {
-      navigate('/stable');
+      navigate('/profile');
     }
   };
 
@@ -323,9 +327,22 @@ const CreateUmamusume: React.FC = () => {
           <Card>
             <CardHeader>
               <CardTitle>Skills</CardTitle>
-              <CardDescription>Select skills for your Umamusume</CardDescription>
+              <CardDescription>Select additional skills for your Umamusume</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {baseUmaSkills.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Auto-added from base Umamusume</p>
+                  <div className="flex flex-wrap gap-2">
+                    {baseUmaSkills.map((skill) => (
+                      <Badge key={skill.id} variant="outline" className="gap-1 cursor-default opacity-70">
+                        {skill.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="relative">
                 <Input
                   placeholder="Search skills..."

@@ -57,16 +57,20 @@ def _get_client_ip(request):
 
 from .models import LoginAttempts, User, UserProfile, SystemSettings
 from .serializers import (
+    AdminUserReadSerializer,
     AdminUserUpdateSerializer,
+    CurrentUserSerializer,
+    PublicUserSerializer,
     UserProfileUpdateSerializer,
     UserRegistrationSerializer,
     UserSerializer,
     UserUpdateSerializer,
 )
 
-MAX_LOGIN_ATTEMPTS = 5
-LOCKOUT_DURATION_MINUTES = 15
+# Constants for session/security config
+SESSION_TIMEOUT_MINUTES = 30
 MAX_TRANSACTION_AMOUNT = Decimal('1000000')
+logger = logging.getLogger('django.request')
 
 
 def _ensure_admin(user):
@@ -91,7 +95,7 @@ def create_login_attempts(user):
 def index(request):
     try:
         users = User.objects.all()
-        serializer = UserSerializer(users, many=True, context={'request': request})
+        serializer = PublicUserSerializer(users, many=True, context={'request': request})
         return Response(serializer.data)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -108,15 +112,20 @@ def admin_user_list(request):
 
         if request.method == 'GET':
             users = User.objects.all()
-            serializer = UserSerializer(users, many=True, context={'request': request})
+            serializer = AdminUserReadSerializer(users, many=True, context={'request': request})
             return Response(serializer.data)
 
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
             create_login_attempts(user)
-            return Response(UserSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(AdminUserReadSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
+        logger.warning(
+            "Rejected admin user create by user_id=%s: validation errors=%s",
+            request.user.pk,
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -129,7 +138,7 @@ def admin_user_list(request):
 def view_profile(request, username):
     try:
         user = User.objects.get(username=username)
-        serializer = UserSerializer(user, context={'request': request})
+        serializer = PublicUserSerializer(user, context={'request': request})
         return Response(serializer.data)
     except User.DoesNotExist:
         return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -147,10 +156,14 @@ def create_profile(request):
         if serializer.is_valid():
             user = serializer.save()
             if create_login_attempts(user):
-                return Response(UserSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
+                return Response(CurrentUserSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
             user.delete()
             return Response({'error': 'Registration failed. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning(
+            "Rejected registration request: validation errors=%s",
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -168,28 +181,65 @@ def admin_user_detail(request, user_id):
         user = User.objects.get(pk=user_id)
 
         if request.method == 'GET':
-            serializer = UserSerializer(user, context={'request': request})
+            serializer = AdminUserReadSerializer(user, context={'request': request})
             return Response(serializer.data)
 
         # Prevent admins from modifying or deleting their own account via this endpoint
         if user.pk == request.user.pk:
+            logger.warning(
+                "Rejected self-admin action by user_id=%s on admin endpoint for target_user_id=%s.",
+                request.user.pk,
+                user.pk,
+            )
             return Response(
-                {'error': 'Administrators cannot modify or delete their own account via this endpoint.'},
+                {'error': 'Invalid request.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         if request.method == 'PATCH':
             serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
+                # Enforce role hierarchy: revoking staff always revokes superuser.
+                if serializer.validated_data.get('is_staff') is False:
+                    serializer.validated_data['is_superuser'] = False
+
                 # Prevent granting is_superuser without also granting is_staff
                 if serializer.validated_data.get('is_superuser') and not serializer.validated_data.get('is_staff', user.is_staff):
+                    logger.warning(
+                        "Rejected admin flag update by user_id=%s for target_user_id=%s: "
+                        "cannot grant is_superuser without is_staff.",
+                        request.user.pk,
+                        user.pk,
+                    )
                     return Response(
-                        {'error': 'Cannot grant is_superuser without also granting is_staff.'},
+                        {'error': 'Invalid request.'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+                # Prevent removing admin privileges from the last privileged account.
+                target_is_staff = serializer.validated_data.get('is_staff', user.is_staff)
+                target_is_superuser = serializer.validated_data.get('is_superuser', user.is_superuser)
+                if user.is_staff and user.is_superuser and not (target_is_staff and target_is_superuser):
+                    privileged_count = User.objects.filter(is_staff=True, is_superuser=True).count()
+                    if privileged_count <= 1:
+                        logger.warning(
+                            "Rejected admin flag update by user_id=%s for target_user_id=%s: "
+                            "attempted to remove privileges from last admin account.",
+                            request.user.pk,
+                            user.pk,
+                        )
+                        return Response(
+                            {'error': 'Invalid request.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
                 serializer.save()
-                return Response(UserSerializer(user, context={'request': request}).data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response(AdminUserReadSerializer(user, context={'request': request}).data)
+            logger.warning(
+                "Rejected admin user patch by user_id=%s for target_user_id=%s: validation errors=%s",
+                request.user.pk,
+                user.pk,
+                serializer.errors,
+            )
+            return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # DELETE
         user.delete()
@@ -239,10 +289,13 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             try:
                 response = super().post(request, *args, **kwargs)
             except AuthenticationFailed:
+                max_login_attempts = int(SystemSettings.get_setting('MAX_LOGIN_ATTEMPTS', 5))
+                lockout_duration = int(SystemSettings.get_setting('LOCKOUT_DURATION_MINUTES', 15))
+                
                 login_attempt.login_attempts += 1
-                if login_attempt.login_attempts >= MAX_LOGIN_ATTEMPTS:
+                if login_attempt.login_attempts >= max_login_attempts:
                     login_attempt.locked_status = True
-                    login_attempt.unlocks_on = timezone.now() + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+                    login_attempt.unlocks_on = timezone.now() + timedelta(minutes=lockout_duration)
                     login_attempt.save()
                     security_log.error(
                         'ACCOUNT_LOCKED | user=%s ip=%s attempts=%d unlocks_at=%s',
@@ -253,7 +306,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                     login_attempt.save()
                     security_log.warning(
                         'LOGIN_FAILED | user=%s ip=%s attempts=%d/%d',
-                        username, ip, login_attempt.login_attempts, MAX_LOGIN_ATTEMPTS,
+                        username, ip, login_attempt.login_attempts, max_login_attempts,
                     )
                 return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -301,7 +354,7 @@ def logout(request):
 @permission_classes([IsAuthenticated])
 def get_current_user(request):
     try:
-        serializer = UserSerializer(request.user, context={'request': request})
+        serializer = CurrentUserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -321,8 +374,13 @@ def update_profile(request):
         serializer = UserProfileUpdateSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(UserSerializer(request.user, context={'request': request}).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
+        logger.warning(
+            "Rejected profile update by user_id=%s: validation errors=%s",
+            request.user.pk,
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -337,8 +395,13 @@ def update_account(request):
         serializer = UserUpdateSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(UserSerializer(request.user, context={'request': request}).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
+        logger.warning(
+            "Rejected account update by user_id=%s: validation errors=%s",
+            request.user.pk,
+            serializer.errors,
+        )
+        return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -371,7 +434,7 @@ def add_balance(request):
         profile = request.user.profile
         profile.balance += amount
         profile.save()
-        return Response(UserSerializer(request.user, context={'request': request}).data)
+        return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -407,7 +470,7 @@ def deduct_balance(request):
 
         profile.balance -= amount
         profile.save()
-        return Response(UserSerializer(request.user, context={'request': request}).data)
+        return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -441,7 +504,7 @@ def upload_avatar(request):
 
         profile.avatar = avatar_file
         profile.save()
-        return Response(UserSerializer(request.user, context={'request': request}).data)
+        return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
     except UserProfile.DoesNotExist:
         return Response({'error': 'User profile not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -492,6 +555,39 @@ def manage_system_settings(request):
             warning_minutes = request.data.get('warning_minutes')
             syslog_host = request.data.get('syslog_host')
             syslog_port = request.data.get('syslog_port')
+            
+            # Additional dynamic settings
+            max_login_attempts = request.data.get('max_login_attempts')
+            lockout_duration_minutes = request.data.get('lockout_duration_minutes')
+            initial_balance = request.data.get('initial_balance')
+            winning_multiplier = request.data.get('winning_multiplier')
+            consolation_multiplier = request.data.get('consolation_multiplier')
+            # CSV Import settings
+            csv_max_size_kb = request.data.get('csv_max_size_kb')
+            csv_max_rows = request.data.get('csv_max_rows')
+
+            if consolation_multiplier is not None:
+                try:
+                    val = str(float(consolation_multiplier))
+                    SystemSettings.set_setting('CONSOLATION_MULTIPLIER', val, user=request.user, description='Consolation payout multiplier')
+                except ValueError:
+                    return Response({'error': 'Invalid Consolation Multiplier'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if csv_max_size_kb is not None:
+                try:
+                    val = int(csv_max_size_kb)
+                    if val < 1: raise ValueError()
+                    SystemSettings.set_setting('CSV_MAX_SIZE_KB', val, user=request.user, description='Maximum CSV upload size (KB)')
+                except ValueError:
+                    return Response({'error': 'Invalid CSV Max Size'}, status=status.HTTP_400_BAD_REQUEST)
+
+            if csv_max_rows is not None:
+                try:
+                    val = int(csv_max_rows)
+                    if val < 1: raise ValueError()
+                    SystemSettings.set_setting('CSV_MAX_ROWS', val, user=request.user, description='Maximum rows in CSV import')
+                except ValueError:
+                    return Response({'error': 'Invalid CSV Max Rows'}, status=status.HTTP_400_BAD_REQUEST)
 
             if timeout_minutes is not None:
                 try:

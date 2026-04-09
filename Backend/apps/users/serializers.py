@@ -48,6 +48,37 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
 
 
+class PublicUserProfileSerializer(serializers.ModelSerializer):
+    """
+    Sanitized profile payload for public/non-admin user responses.
+    Excludes financial and betting statistics.
+    """
+    avatar_url = serializers.SerializerMethodField()
+
+    def get_avatar_url(self, obj):
+        if obj.avatar and hasattr(obj.avatar, 'url'):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
+
+    class Meta:
+        model = UserProfile
+        fields = [
+            'bio',
+            'avatar',
+            'avatar_url',
+            'favorite_umamusume',
+        ]
+        read_only_fields = [
+            'bio',
+            'avatar',
+            'avatar_url',
+            'favorite_umamusume',
+        ]
+
+
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for updating UserProfile (only editable fields).
@@ -92,6 +123,103 @@ class UserSerializer(serializers.ModelSerializer):
             'is_staff',
             'is_superuser',
             'date_joined',
+            'profile',
+        ]
+        read_only_fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'phone_number',
+            'is_active',
+            'is_staff',
+            'is_superuser',
+            'date_joined',
+            'profile',
+        ]
+
+
+class PublicUserSerializer(serializers.ModelSerializer):
+    """
+    Public/non-admin serializer.
+    Hides privilege flags and sensitive profile statistics.
+    """
+    profile = PublicUserProfileSerializer(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'username',
+            'full_name',
+            'date_joined',
+            'profile',
+        ]
+        read_only_fields = [
+            'username', 
+            'full_name', 
+            'date_joined', 
+            'profile'
+        ]
+
+
+class CurrentUserSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the authenticated user's own account payload.
+    Keeps self-service fields needed by the app but does not expose raw admin flags.
+    """
+    # Self profile can include private financial/stat fields used by own dashboard.
+    profile = UserProfileSerializer(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'date_joined',
+            'profile',
+        ]
+        read_only_fields = [
+            'id', 
+            'username', 
+            'email', 
+            'full_name', 
+            'date_joined', 
+            'profile'
+        ]
+
+
+class AdminUserReadSerializer(serializers.ModelSerializer):
+    """
+    Strict admin read payload.
+    Does not expose privilege flags or financial/betting statistics.
+    """
+    profile = PublicUserProfileSerializer(read_only=True)
+    account_status = serializers.SerializerMethodField()
+    access_tier = serializers.SerializerMethodField()
+
+    def get_account_status(self, obj):
+        return 'active' if obj.is_active else 'disabled'
+
+    def get_access_tier(self, obj):
+        if obj.is_staff and obj.is_superuser:
+            return 'admin'
+        if obj.is_staff:
+            return 'staff'
+        return 'user'
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'phone_number',
+            'date_joined',
+            'account_status',
+            'access_tier',
             'profile',
         ]
         read_only_fields = ['id', 'date_joined']
