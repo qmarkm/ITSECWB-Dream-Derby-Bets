@@ -12,7 +12,17 @@ jobs:
       - name: Pull latest code
         run: |
           cd /home/dreamderby/app
+          # Backup logs before pull because the incoming commit removes them from Git
+          sudo -u dreamderby cp Backend/logs/app.log /tmp/app.log.bak || true
+          sudo -u dreamderby cp Backend/logs/security.log /tmp/security.log.bak || true
+          
+          # Clean working tree and pull
+          sudo -u dreamderby git reset --hard HEAD
           sudo -u dreamderby git pull origin main
+          
+          # Restore logs (they are now safely untracked)
+          sudo -u dreamderby cp /tmp/app.log.bak Backend/logs/app.log || true
+          sudo -u dreamderby cp /tmp/security.log.bak Backend/logs/security.log || true
 
       - name: Install Python dependencies
         run: |
