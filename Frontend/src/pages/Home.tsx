@@ -112,19 +112,19 @@ const Home: React.FC = () => {
         <Tabs defaultValue="all" className="space-y-6">
           <TabsList className="w-full justify-start bg-secondary/50 p-1 flex-wrap h-auto gap-1">
             <TabsTrigger value="all">All ({racesByStatus.all.length})</TabsTrigger>
-            <TabsTrigger value="scheduled">Scheduled ({racesByStatus.scheduled.length})</TabsTrigger>
+            <TabsTrigger value="scheduled">Enrolling ({racesByStatus.scheduled.length})</TabsTrigger>
             <TabsTrigger value="open" className="gap-2">
               <span className="h-2 w-2 rounded-full bg-accent"></span>
-              Open ({racesByStatus.open.length})
+              Bets Open ({racesByStatus.open.length})
             </TabsTrigger>
             <TabsTrigger value="active" className="gap-2">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
               </span>
-              Active ({racesByStatus.active.length})
+              Bets Closed ({racesByStatus.active.length})
             </TabsTrigger>
-            <TabsTrigger value="completed">Completed ({racesByStatus.completed.length})</TabsTrigger>
+            <TabsTrigger value="completed">Finished ({racesByStatus.completed.length})</TabsTrigger>
           </TabsList>
 
           {isLoading ? (

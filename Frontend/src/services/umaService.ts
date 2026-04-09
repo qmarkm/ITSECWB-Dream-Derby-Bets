@@ -104,7 +104,7 @@ export const getMyUmas = async (): Promise<Uma[]> => {
 };
 
 export const getSkills = async(): Promise<Skill[]> => {
-    const response = await apiClient.get<Skill[]>('api/umamusume/skills/');
+    const response = await apiClient.get<Skill[]>('/api/umamusume/skills/');
     return response.data;
 }
 

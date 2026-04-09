@@ -287,13 +287,22 @@ const RaceDetail: React.FC = () => {
                             </span>
                           )}
                           <Avatar className="h-12 w-12 border-2 border-card">
-                            <AvatarImage src={p.umamusume_data?.image ?? undefined} />
+                            <AvatarImage src={p.umamusume_data?.avatar_url ?? undefined} />
                             <AvatarFallback className="bg-primary/10 text-primary">
                               {(p.umamusume_data?.name ?? "?").charAt(0)}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold truncate">{p.umamusume_data?.name ?? `Uma #${p.umamusume}`}</p>
+                            {p.umamusume_data && (
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                                <span>SPD {p.umamusume_data.speed}</span>
+                                <span>STA {p.umamusume_data.stamina}</span>
+                                <span>POW {p.umamusume_data.power}</span>
+                                <span>GUT {p.umamusume_data.guts}</span>
+                                <span>WIT {p.umamusume_data.wit}</span>
+                              </div>
+                            )}
                           </div>
                           {isOpen && !myBid && isSelected && (
                             <Badge variant="default" className="shrink-0">Selected</Badge>
@@ -467,9 +476,9 @@ const RaceDetail: React.FC = () => {
                         </div>
                       )}
                       {!selectedParticipant && (
-                        <p className="text-xs text-muted-foreground">
-                          Select a runner on the left, or leave unselected to bet on the race.
-                        </p>
+                        <div className="rounded-md border border-dashed border-primary/40 bg-primary/5 px-3 py-2 text-sm text-primary animate-pulse">
+                          Click a runner on the left to select who you're betting on
+                        </div>
                       )}
                       <div>
                         <Label htmlFor="bet-amount">Amount</Label>

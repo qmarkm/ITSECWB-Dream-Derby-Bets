@@ -9,25 +9,25 @@ interface StatusBadgeProps {
 const statusConfig: Record<string, { label: string; className: string; pulse?: boolean }> = {
   // Backend statuses
   scheduled: {
-    label: "Scheduled",
+    label: "Enrolling Runners",
     className: "bg-primary/20 text-primary border-primary/30",
   },
   open: {
-    label: "Open",
+    label: "Bets Open",
     className: "bg-accent/20 text-accent border-accent/30",
   },
   active: {
-    label: "Active",
+    label: "Bets Closed",
     className: "bg-success/20 text-success border-success/30",
     pulse: true,
   },
   race_ongoing: {
-    label: "Race Ongoing",
+    label: "Racing",
     className: "bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30",
     pulse: true,
   },
   completed: {
-    label: "Completed",
+    label: "Finished",
     className: "bg-muted text-muted-foreground border-muted-foreground/30",
   },
   // Legacy / fallback
