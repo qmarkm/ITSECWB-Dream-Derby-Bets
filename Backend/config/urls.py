@@ -22,7 +22,13 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenVerifyView,
 )
-from apps.users.views import CustomTokenObtainPairView
+from apps.users.views import (
+    CustomTokenObtainPairView,
+    get_session_settings,
+    manage_system_settings,
+    get_security_logs,
+    delete_security_logs,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -31,6 +37,12 @@ urlpatterns = [
     path('api/auth/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
+
+    # Session timeout settings
+    path('api/settings/session/', get_session_settings, name='get_session_settings'),
+    path('api/admin/settings/', manage_system_settings, name='manage_system_settings'),
+    path('api/admin/logs/', get_security_logs, name='get_security_logs'),
+    path('api/admin/logs/delete/', delete_security_logs, name='delete_security_logs'),
 
     # API endpoints (add these after you create your apps)
     path('api/users/', include('apps.users.urls')),

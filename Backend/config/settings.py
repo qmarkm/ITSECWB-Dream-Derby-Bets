@@ -14,6 +14,7 @@ from pathlib import Path
 from decouple import Config, RepositoryEnv
 from datetime import timedelta
 from urllib.parse import urlparse, unquote
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -32,7 +33,7 @@ SECRET_KEY = config('SECRET_KEY')  # No default — server will refuse to start 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=lambda v: [s.strip() for s in v.split(',')])
 
 
 # Application definition
@@ -48,6 +49,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
 
     # Local apps
@@ -97,11 +99,19 @@ def _database_config_from_url(database_url: str) -> dict:
     Parse DATABASE_URL into Django DATABASES['default'] dict.
     Expected MySQL format:
       mysql://USER:PASSWORD@HOST:PORT/DB_NAME
+    Or SQLite format:
+      sqlite:///path/to/db.sqlite3
     """
     parsed = urlparse(database_url)
 
+    if parsed.scheme == 'sqlite':
+        return {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+
     if parsed.scheme not in ('mysql', 'mysql2'):
-        raise ValueError("DATABASE_URL must start with mysql://")
+        raise ValueError("DATABASE_URL must start with mysql:// or sqlite://")
 
     if not parsed.path or parsed.path == '/':
         raise ValueError("DATABASE_URL is missing the database name (path)")
@@ -210,14 +220,15 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '10/hour',
-        'user': '100/hour'
-    },
+    # Throttling disabled for testing
+    # 'DEFAULT_THROTTLE_CLASSES': [
+    #     'rest_framework.throttling.AnonRateThrottle',
+    #     'rest_framework.throttling.UserRateThrottle'
+    # ],
+    # 'DEFAULT_THROTTLE_RATES': {
+    #     'anon': '10/hour',
+    #     'user': '100/hour'
+    # },
     # DEBUG=True  → full exception class, message, and stack trace
     # DEBUG=False → generic "unexpected error" message only
     'EXCEPTION_HANDLER': 'config.exception_handler.custom_exception_handler',
@@ -241,7 +252,7 @@ SIMPLE_JWT = {
 # CORS Settings
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080',
+    default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 
@@ -267,3 +278,107 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
 ]
+
+# ---------------------------------------------------------------------------
+# Logging
+# LOG_DIR defaults to Backend/logs/ for development.
+# In production set LOG_DIR=/var/log/derby-bets in .env
+# ---------------------------------------------------------------------------
+LOG_DIR = config('LOG_DIR', default=str(BASE_DIR / 'logs'))
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Remote syslog server — DB values take priority over .env so the admin
+# panel can override them. Falls back to .env on first boot before DB is ready.
+SYSLOG_HOST = config('SYSLOG_HOST', default='')
+SYSLOG_PORT = config('SYSLOG_PORT', default=514, cast=int)
+
+try:
+    from apps.users.models import SystemSettings as _SS
+    _db_host = _SS.get_setting('SYSLOG_HOST', None)
+    _db_port = _SS.get_setting('SYSLOG_PORT', None)
+    if _db_host is not None:
+        SYSLOG_HOST = _db_host
+    if _db_port is not None:
+        SYSLOG_PORT = int(_db_port)
+except Exception:
+    pass  # DB not ready yet (migrations, first run) — use .env values
+
+# Build handler list and handler dict dynamically.
+# syslog_remote is only defined when SYSLOG_HOST is non-empty — defining it
+# with an empty host causes SysLogHandler to call socket.getaddrinfo('', 514)
+# at Django startup which raises ValueError and crashes migrations/gunicorn.
+_security_handlers = ['security_file', 'console']
+_extra_handlers = {}
+if SYSLOG_HOST:
+    _security_handlers.append('syslog_remote')
+    _extra_handlers['syslog_remote'] = {
+        'class': 'logging.handlers.SysLogHandler',
+        'address': (SYSLOG_HOST, SYSLOG_PORT),
+        'facility': 'local0',
+        'formatter': 'syslog',
+    }
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'security': {
+            'format': '{asctime} | {levelname} | {name} | {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%dT%H:%M:%S%z',
+        },
+        'verbose': {
+            'format': '{asctime} | {levelname} | {name} | {module} | {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%dT%H:%M:%S%z',
+        },
+        # Syslog format: plain message — rsyslog adds its own timestamp/host
+        'syslog': {
+            'format': 'derby-bets: {levelname} | {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'security_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOG_DIR, 'security.log'),
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB per file
+            'backupCount': 30,
+            'formatter': 'security',
+            'encoding': 'utf-8',
+        },
+        'app_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(LOG_DIR, 'app.log'),
+            'maxBytes': 10 * 1024 * 1024,
+            'backupCount': 10,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        **_extra_handlers,
+    },
+    'loggers': {
+        # Security events: login failures, lockouts, unlocks, logouts
+        'security': {
+            'handlers': _security_handlers,
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # General Django warnings/errors
+        'django': {
+            'handlers': ['app_file', 'console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Unhandled request errors (caught by exception_handler.py)
+        'django.request': {
+            'handlers': ['app_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+    },
+}

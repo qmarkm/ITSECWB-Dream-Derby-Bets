@@ -204,11 +204,21 @@ export const searchUsers = async (query: string): Promise<User[]> => {
 };
 
 /**
- * Logout (client-side only - clears tokens)
- * JWT tokens are stateless, so logout is handled by removing tokens
+ * Logout (with token blacklisting)
+ * Invalidates the refresh token on the server and clears local storage
  */
-export const logout = () => {
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
-  localStorage.removeItem('user');
+export const logout = async () => {
+  try {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      await apiClient.post('/api/users/logout/', { refresh_token: refreshToken });
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+  } finally {
+    // Always clear local storage even if API call fails
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+  }
 };

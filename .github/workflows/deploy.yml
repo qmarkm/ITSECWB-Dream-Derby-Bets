@@ -37,8 +37,10 @@ jobs:
 
       - name: Deploy frontend build
         run: |
-          sudo cp -r /home/dreamderby/app/Frontend/dist/ /var/www/dream-derby/dist/
+          sudo rm -rf /var/www/dream-derby/dist/*
+          sudo cp -r /home/dreamderby/app/Frontend/dist/. /var/www/dream-derby/dist/
           sudo chown -R www-data:www-data /var/www/dream-derby
+          sudo systemctl reload nginx
 
       - name: Restart Gunicorn
         run: sudo systemctl restart gunicorn-dreamderby

@@ -2,14 +2,15 @@
 .env
 .env.*
 !.env.example
+!Frontend/.env.production
 master.key
 node_modules
 .claude
 
-# Django migrations
-Backend/apps/users/migrations/
-Backend/apps/events/migrations/
-Backend/apps/umamusume/migrations/
+# Django migrations — keep files, ignore only pycache
+Backend/apps/users/migrations/__pycache__/
+Backend/apps/events/migrations/__pycache__/
+Backend/apps/umamusume/migrations/__pycache__/
 
 # Python virtual environment
 Backend/venv/
@@ -21,6 +22,9 @@ Backend/venv/
 
 # React node_modules
 Frontend/node_modules/
+
+# Log files
+Backend/logs/
 
 # Markdown files
 nul
