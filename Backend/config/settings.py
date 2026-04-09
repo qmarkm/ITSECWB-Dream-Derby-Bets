@@ -156,12 +156,40 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Media files (User uploads like profile pictures)
 # https://docs.djangoproject.com/en/5.2/topics/files/
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Production security settings (only active when DEBUG=False)
+if not DEBUG:
+    # Trust the X-Forwarded-Proto header set by Cloudflare/reverse proxy
+    # so Django knows the original request was HTTPS even though Nginx
+    # only receives plain HTTP from the Cloudflare Tunnel internally.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # Do NOT redirect in Django — Cloudflare/Nginx handles HTTP→HTTPS
+    SECURE_SSL_REDIRECT = False
+
+    # Tell browsers to use HTTPS exclusively for 1 year
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+    # Cookies are only sent over HTTPS
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # Prevent MIME-type sniffing
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+    # XSS protection header for legacy browsers
+    SECURE_BROWSER_XSS_FILTER = True
+
+    # Clickjacking protection
+    X_FRAME_OPTIONS = 'DENY'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
