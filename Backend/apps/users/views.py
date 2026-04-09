@@ -17,6 +17,28 @@ from rest_framework_simplejwt.tokens import RefreshToken
 security_log = logging.getLogger('security')
 
 
+def _apply_syslog_config(host: str, port: int) -> None:
+    """
+    Hot-reload the syslog handler on the 'security' logger without a restart.
+    Removes any existing SysLogHandler first, then adds a new one if host is set.
+    """
+    import logging.handlers as _lh
+
+    logger = logging.getLogger('security')
+
+    # Remove existing remote syslog handlers
+    for handler in list(logger.handlers):
+        if isinstance(handler, _lh.SysLogHandler):
+            handler.close()
+            logger.removeHandler(handler)
+
+    if host:
+        formatter = logging.Formatter('derby-bets: %(levelname)s | %(message)s')
+        syslog_handler = _lh.SysLogHandler(address=(host, port), facility=_lh.SysLogHandler.LOG_LOCAL0)
+        syslog_handler.setFormatter(formatter)
+        logger.addHandler(syslog_handler)
+
+
 def _get_client_ip(request):
     """Extract real client IP.
 
@@ -547,6 +569,12 @@ def manage_system_settings(request):
                         {'error': 'Invalid port value'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+
+            if syslog_host is not None or syslog_port is not None:
+                _apply_syslog_config(
+                    host=str(SystemSettings.get_setting('SYSLOG_HOST', '')).strip(),
+                    port=int(SystemSettings.get_setting('SYSLOG_PORT', 514)),
+                )
 
             return Response({
                 'message': 'Settings updated successfully',

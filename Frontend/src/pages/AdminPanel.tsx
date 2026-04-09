@@ -2646,7 +2646,7 @@ const AdminPanel: React.FC = () => {
                     <div className={`h-2.5 w-2.5 rounded-full mr-3 flex-shrink-0 ${syslogHost ? 'bg-green-500' : 'bg-gray-400'}`} />
                     <p className="text-sm text-blue-800 dark:text-blue-200">
                       {syslogHost
-                        ? <>Remote logging <strong>enabled</strong> → <code className="font-mono">{syslogHost}:{syslogPort}</code> (UDP). Server restart required to apply.</>
+                        ? <>Remote logging <strong>enabled</strong> → <code className="font-mono">{syslogHost}:{syslogPort}</code> (UDP).</>
                         : 'Remote logging disabled — events are only written to the local log file.'}
                     </p>
                   </div>
