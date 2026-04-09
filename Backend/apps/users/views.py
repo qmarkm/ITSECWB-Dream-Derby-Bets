@@ -1,4 +1,5 @@
 import os
+import logging
 from decimal import Decimal
 from datetime import timedelta
 
@@ -14,7 +15,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import LoginAttempts, User, UserProfile
 from .serializers import (
+    AdminUserReadSerializer,
     AdminUserUpdateSerializer,
+    CurrentUserSerializer,
+    PublicUserSerializer,
     UserProfileUpdateSerializer,
     UserRegistrationSerializer,
     UserSerializer,
@@ -24,6 +28,7 @@ from .serializers import (
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
 MAX_TRANSACTION_AMOUNT = Decimal('1000000')
+logger = logging.getLogger('django.request')
 
 
 def _ensure_admin(user):
@@ -48,7 +53,7 @@ def create_login_attempts(user):
 def index(request):
     try:
         users = User.objects.all()
-        serializer = UserSerializer(users, many=True, context={'request': request})
+        serializer = PublicUserSerializer(users, many=True, context={'request': request})
         return Response(serializer.data)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -65,14 +70,14 @@ def admin_user_list(request):
 
         if request.method == 'GET':
             users = User.objects.all()
-            serializer = UserSerializer(users, many=True, context={'request': request})
+            serializer = AdminUserReadSerializer(users, many=True, context={'request': request})
             return Response(serializer.data)
 
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
             create_login_attempts(user)
-            return Response(UserSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
+            return Response(AdminUserReadSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
@@ -86,7 +91,7 @@ def admin_user_list(request):
 def view_profile(request, username):
     try:
         user = User.objects.get(username=username)
-        serializer = UserSerializer(user, context={'request': request})
+        serializer = PublicUserSerializer(user, context={'request': request})
         return Response(serializer.data)
     except User.DoesNotExist:
         return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -104,7 +109,7 @@ def create_profile(request):
         if serializer.is_valid():
             user = serializer.save()
             if create_login_attempts(user):
-                return Response(UserSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
+                return Response(CurrentUserSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
             user.delete()
             return Response({'error': 'Registration failed. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -125,28 +130,65 @@ def admin_user_detail(request, user_id):
         user = User.objects.get(pk=user_id)
 
         if request.method == 'GET':
-            serializer = UserSerializer(user, context={'request': request})
+            serializer = AdminUserReadSerializer(user, context={'request': request})
             return Response(serializer.data)
 
         # Prevent admins from modifying or deleting their own account via this endpoint
         if user.pk == request.user.pk:
+            logger.warning(
+                "Rejected self-admin action by user_id=%s on admin endpoint for target_user_id=%s.",
+                request.user.pk,
+                user.pk,
+            )
             return Response(
-                {'error': 'Administrators cannot modify or delete their own account via this endpoint.'},
+                {'error': 'Invalid request.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         if request.method == 'PATCH':
             serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
+                # Enforce role hierarchy: revoking staff always revokes superuser.
+                if serializer.validated_data.get('is_staff') is False:
+                    serializer.validated_data['is_superuser'] = False
+
                 # Prevent granting is_superuser without also granting is_staff
                 if serializer.validated_data.get('is_superuser') and not serializer.validated_data.get('is_staff', user.is_staff):
+                    logger.warning(
+                        "Rejected admin flag update by user_id=%s for target_user_id=%s: "
+                        "cannot grant is_superuser without is_staff.",
+                        request.user.pk,
+                        user.pk,
+                    )
                     return Response(
-                        {'error': 'Cannot grant is_superuser without also granting is_staff.'},
+                        {'error': 'Invalid request.'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+                # Prevent removing admin privileges from the last privileged account.
+                target_is_staff = serializer.validated_data.get('is_staff', user.is_staff)
+                target_is_superuser = serializer.validated_data.get('is_superuser', user.is_superuser)
+                if user.is_staff and user.is_superuser and not (target_is_staff and target_is_superuser):
+                    privileged_count = User.objects.filter(is_staff=True, is_superuser=True).count()
+                    if privileged_count <= 1:
+                        logger.warning(
+                            "Rejected admin flag update by user_id=%s for target_user_id=%s: "
+                            "attempted to remove privileges from last admin account.",
+                            request.user.pk,
+                            user.pk,
+                        )
+                        return Response(
+                            {'error': 'Invalid request.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
                 serializer.save()
-                return Response(UserSerializer(user, context={'request': request}).data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response(AdminUserReadSerializer(user, context={'request': request}).data)
+            logger.warning(
+                "Rejected admin user patch by user_id=%s for target_user_id=%s: validation errors=%s",
+                request.user.pk,
+                user.pk,
+                serializer.errors,
+            )
+            return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # DELETE
         user.delete()
@@ -217,7 +259,7 @@ def logout(request):
 @permission_classes([IsAuthenticated])
 def get_current_user(request):
     try:
-        serializer = UserSerializer(request.user, context={'request': request})
+        serializer = CurrentUserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -237,7 +279,7 @@ def update_profile(request):
         serializer = UserProfileUpdateSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(UserSerializer(request.user, context={'request': request}).data)
+            return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
@@ -253,7 +295,7 @@ def update_account(request):
         serializer = UserUpdateSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(UserSerializer(request.user, context={'request': request}).data)
+            return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception:
@@ -287,7 +329,7 @@ def add_balance(request):
         profile = request.user.profile
         profile.balance += amount
         profile.save()
-        return Response(UserSerializer(request.user, context={'request': request}).data)
+        return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -323,7 +365,7 @@ def deduct_balance(request):
 
         profile.balance -= amount
         profile.save()
-        return Response(UserSerializer(request.user, context={'request': request}).data)
+        return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -357,7 +399,7 @@ def upload_avatar(request):
 
         profile.avatar = avatar_file
         profile.save()
-        return Response(UserSerializer(request.user, context={'request': request}).data)
+        return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
     except UserProfile.DoesNotExist:
         return Response({'error': 'User profile not found.'}, status=status.HTTP_404_NOT_FOUND)

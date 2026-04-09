@@ -63,8 +63,9 @@ const UserProfile: React.FC = () => {
     return null;
   }
 
-  const winRate = profileUser.profile.win_rate.toFixed(1);
-  const netProfit = Number(profileUser.profile.net_profit);
+  const hasPrivateStats = typeof profileUser.profile.win_rate === "number" && typeof profileUser.profile.net_profit === "number";
+  const winRate = hasPrivateStats ? Number(profileUser.profile.win_rate).toFixed(1) : null;
+  const netProfit = hasPrivateStats ? Number(profileUser.profile.net_profit) : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -106,10 +107,12 @@ const UserProfile: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-accent/20">
-                  <Coins className="h-5 w-5 text-accent" />
-                  <span className="text-lg font-bold">{Number(profileUser.profile.balance).toLocaleString()}</span>
-                </div>
+                {typeof profileUser.profile.balance === "number" && (
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-accent/20">
+                    <Coins className="h-5 w-5 text-accent" />
+                    <span className="text-lg font-bold">{Number(profileUser.profile.balance).toLocaleString()}</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -182,32 +185,36 @@ const UserProfile: React.FC = () => {
               <CardDescription>{profileUser.username}'s betting activity</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg bg-secondary/50 text-center">
-                  <Trophy className="h-6 w-6 mx-auto mb-2 text-blue-500" />
-                  <p className="text-3xl font-bold text-primary">{profileUser.profile.total_bets_placed}</p>
-                  <p className="text-sm text-muted-foreground">Total Bets</p>
-                </div>
-                <div className="p-4 rounded-lg bg-secondary/50 text-center">
-                  <TrendingUp className="h-6 w-6 mx-auto mb-2 text-green-500" />
-                  <p className="text-3xl font-bold text-success">{profileUser.profile.total_bets_won}</p>
-                  <p className="text-sm text-muted-foreground">Wins</p>
-                </div>
-                <div className="p-4 rounded-lg bg-secondary/50 text-center">
-                  <div className="h-6 w-6 mx-auto mb-2 flex items-center justify-center">
-                    <span className="text-2xl">%</span>
+              {hasPrivateStats ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 rounded-lg bg-secondary/50 text-center">
+                    <Trophy className="h-6 w-6 mx-auto mb-2 text-blue-500" />
+                    <p className="text-3xl font-bold text-primary">{profileUser.profile.total_bets_placed}</p>
+                    <p className="text-sm text-muted-foreground">Total Bets</p>
                   </div>
-                  <p className="text-3xl font-bold text-accent">{winRate}%</p>
-                  <p className="text-sm text-muted-foreground">Win Rate</p>
+                  <div className="p-4 rounded-lg bg-secondary/50 text-center">
+                    <TrendingUp className="h-6 w-6 mx-auto mb-2 text-green-500" />
+                    <p className="text-3xl font-bold text-success">{profileUser.profile.total_bets_won}</p>
+                    <p className="text-sm text-muted-foreground">Wins</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-secondary/50 text-center">
+                    <div className="h-6 w-6 mx-auto mb-2 flex items-center justify-center">
+                      <span className="text-2xl">%</span>
+                    </div>
+                    <p className="text-3xl font-bold text-accent">{winRate}%</p>
+                    <p className="text-sm text-muted-foreground">Win Rate</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-secondary/50 text-center">
+                    <TrendingDown className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+                    <p className={`text-3xl font-bold ${(netProfit ?? 0) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                      {(netProfit ?? 0) >= 0 ? '+' : ''}{(netProfit ?? 0).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Net Profit</p>
+                  </div>
                 </div>
-                <div className="p-4 rounded-lg bg-secondary/50 text-center">
-                  <TrendingDown className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
-                  <p className={`text-3xl font-bold ${netProfit >= 0 ? 'text-success' : 'text-destructive'}`}>
-                    {netProfit >= 0 ? '+' : ''}{netProfit.toLocaleString()}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Net Profit</p>
-                </div>
-              </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Betting stats are private for this profile.</p>
+              )}
             </CardContent>
           </Card>
         </div>

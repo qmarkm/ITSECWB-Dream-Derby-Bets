@@ -21,28 +21,31 @@ export interface LoginResponse {
 }
 
 export interface UserProfile {
-  balance: number;
-  total_bets_placed: number;
-  total_bets_won: number;
-  total_bets_lost: number;
-  total_winnings: number;
-  total_losses: number;
+  balance?: number;
+  total_bets_placed?: number;
+  total_bets_won?: number;
+  total_bets_lost?: number;
+  total_winnings?: number;
+  total_losses?: number;
   bio: string | null;
   avatar_url: string | null;
   favorite_umamusume: string | null;
-  win_rate: number;
-  net_profit: number;
+  win_rate?: number;
+  net_profit?: number;
 }
 
 export interface User {
   id: number;
   username: string;
-  email: string;
+  email?: string;
   full_name?: string;
   phone_number?: string;
-  is_active: boolean;
-  is_staff: boolean;
-  is_superuser: boolean;
+  is_active?: boolean;
+  is_staff?: boolean;
+  is_superuser?: boolean;
+  can_access_admin?: boolean;
+  account_status?: 'active' | 'disabled';
+  access_tier?: 'admin' | 'staff' | 'user';
   date_joined: string;
   profile: UserProfile;
 }
