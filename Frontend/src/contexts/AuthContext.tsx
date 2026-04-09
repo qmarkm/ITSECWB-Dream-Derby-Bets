@@ -1,6 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import * as authService from "@/services/authService";
 import type { User as BackendUser, ProfileUpdateData, AccountUpdateData } from "@/services/authService";
+import { useSessionTimeout } from "@/hooks/useSessionTimeout";
+import { SessionWarningModal } from "@/components/SessionWarningModal";
+import { getSessionSettings, SessionSettings } from "@/services/settingsService";
 
 // Frontend User interface that matches our UI needs
 export interface User {
@@ -70,6 +74,25 @@ const mapBackendUser = (backendUser: BackendUser): User => ({
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionSettings, setSessionSettings] = useState<SessionSettings>({
+    timeout_minutes: 30,
+    warning_minutes: 5,
+  });
+  const navigate = useNavigate();
+
+  // Fetch session settings on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const settings = await getSessionSettings();
+        setSessionSettings(settings);
+      } catch (error) {
+        console.error('Failed to fetch session settings:', error);
+        // Use defaults if fetch fails
+      }
+    };
+    fetchSettings();
+  }, []);
 
   // On mount, check if we have tokens and fetch user data
   useEffect(() => {
@@ -95,6 +118,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initAuth();
   }, []);
+
+  const handleSessionTimeout = useCallback(() => {
+    authService.logout();
+    setUser(null);
+    navigate('/auth?reason=timeout');
+  }, [navigate]);
+
+  const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({
+    timeoutMinutes: sessionSettings.timeout_minutes,
+    warningMinutes: sessionSettings.warning_minutes,
+    onTimeout: handleSessionTimeout,
+    enabled: !!user,
+  });
 
   const login = async (
     username: string,
@@ -163,8 +199,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
-    authService.logout();
+  const logout = async () => {
+    await authService.logout();
     setUser(null);
   };
 
@@ -227,6 +263,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }}
     >
       {children}
+
+      {!!user && (
+        <SessionWarningModal
+          isOpen={showWarning}
+          remainingSeconds={remainingSeconds}
+          onExtend={extendSession}
+          onLogout={() => logout()}
+        />
+      )}
     </AuthContext.Provider>
   );
 };

@@ -11,8 +11,9 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import LoginAttempts, User, UserProfile
+from .models import LoginAttempts, User, UserProfile, SystemSettings
 from .serializers import (
     AdminUserUpdateSerializer,
     UserProfileUpdateSerializer,
@@ -206,7 +207,14 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 @permission_classes([IsAuthenticated])
 def logout(request):
     try:
-        return Response({'message': 'Logout successful.'})
+        refresh_token = request.data.get('refresh_token')
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except Exception:
+                pass
+        return Response({'message': 'Logout successful.'}, status=status.HTTP_200_OK)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     finally:
@@ -366,3 +374,102 @@ def upload_avatar(request):
     finally:
         if avatar_file:
             avatar_file.close()
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_session_settings(request):
+    """Get session timeout settings (public endpoint for frontend)"""
+    try:
+        timeout_minutes = int(SystemSettings.get_setting('SESSION_TIMEOUT_MINUTES', 30))
+        warning_minutes = int(SystemSettings.get_setting('SESSION_WARNING_MINUTES', 5))
+
+        return Response({
+            'timeout_minutes': timeout_minutes,
+            'warning_minutes': warning_minutes,
+        })
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def manage_system_settings(request):
+    """Admin endpoint to view and update system settings"""
+    try:
+        if not _ensure_admin(request.user):
+            return Response(
+                {'error': 'Admin access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if request.method == 'GET':
+            settings_list = SystemSettings.objects.all().values(
+                'setting_key', 'setting_value', 'description', 'updated_at'
+            )
+            return Response({'settings': list(settings_list)})
+
+        elif request.method == 'POST':
+            timeout_minutes = request.data.get('timeout_minutes')
+            warning_minutes = request.data.get('warning_minutes')
+
+            if timeout_minutes is not None:
+                try:
+                    timeout_val = int(timeout_minutes)
+                    if timeout_val < 1 or timeout_val > 60:
+                        return Response(
+                            {'error': 'Timeout must be between 1 and 60 minutes'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    SystemSettings.set_setting(
+                        'SESSION_TIMEOUT_MINUTES',
+                        timeout_val,
+                        user=request.user,
+                        description='Inactivity timeout in minutes (1-60)'
+                    )
+                except ValueError:
+                    return Response(
+                        {'error': 'Invalid timeout value'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            if warning_minutes is not None:
+                try:
+                    warning_val = int(warning_minutes)
+                    if warning_val < 1 or warning_val > 10:
+                        return Response(
+                            {'error': 'Warning time must be between 1 and 10 minutes'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    current_timeout = int(SystemSettings.get_setting('SESSION_TIMEOUT_MINUTES', 30))
+                    if warning_val >= current_timeout:
+                        return Response(
+                            {'error': 'Warning time must be less than timeout duration'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    SystemSettings.set_setting(
+                        'SESSION_WARNING_MINUTES',
+                        warning_val,
+                        user=request.user,
+                        description='Warning display before timeout in minutes (1-10)'
+                    )
+                except ValueError:
+                    return Response(
+                        {'error': 'Invalid warning value'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            return Response({
+                'message': 'Settings updated successfully',
+                'timeout_minutes': int(SystemSettings.get_setting('SESSION_TIMEOUT_MINUTES', 30)),
+                'warning_minutes': int(SystemSettings.get_setting('SESSION_WARNING_MINUTES', 5)),
+            })
+
+    except Exception:
+        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        pass

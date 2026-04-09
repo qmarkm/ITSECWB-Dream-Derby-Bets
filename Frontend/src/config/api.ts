@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // Base API URL from environment variables
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+// Use empty string in development to leverage Vite proxy
+export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Create axios instance with default config
 const apiClient = axios.create({
@@ -42,7 +43,7 @@ apiClient.interceptors.response.use(
         }
 
         // Try to refresh the token
-        const response = await axios.post(`${API_BASE_URL}/api/auth/token/refresh/`, {
+        const response = await axios.post('/api/auth/token/refresh/', {
           refresh: refreshToken,
         });
 

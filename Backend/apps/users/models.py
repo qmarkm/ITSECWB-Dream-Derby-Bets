@@ -143,3 +143,46 @@ def save_user_profile(sender, instance, **kwargs):
     """
     if hasattr(instance, 'profile'):
         instance.profile.save()
+
+
+class SystemSettings(models.Model):
+    """Global system configuration"""
+    setting_key = models.CharField(max_length=100, unique=True, db_index=True)
+    setting_value = models.TextField()
+    description = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='updated_settings'
+    )
+
+    class Meta:
+        db_table = 'system_settings'
+        verbose_name = 'System Setting'
+        verbose_name_plural = 'System Settings'
+
+    def __str__(self):
+        return f"{self.setting_key}: {self.setting_value}"
+
+    @classmethod
+    def get_setting(cls, key, default=None):
+        """Get setting value by key"""
+        try:
+            return cls.objects.get(setting_key=key).setting_value
+        except cls.DoesNotExist:
+            return default
+
+    @classmethod
+    def set_setting(cls, key, value, user=None, description=''):
+        """Set or update setting value"""
+        obj, created = cls.objects.update_or_create(
+            setting_key=key,
+            defaults={
+                'setting_value': str(value),
+                'description': description,
+                'updated_by': user,
+            }
+        )
+        return obj

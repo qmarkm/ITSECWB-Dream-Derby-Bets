@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
 
     # Local apps
@@ -96,11 +97,19 @@ def _database_config_from_url(database_url: str) -> dict:
     Parse DATABASE_URL into Django DATABASES['default'] dict.
     Expected MySQL format:
       mysql://USER:PASSWORD@HOST:PORT/DB_NAME
+    Or SQLite format:
+      sqlite:///path/to/db.sqlite3
     """
     parsed = urlparse(database_url)
 
+    if parsed.scheme == 'sqlite':
+        return {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+
     if parsed.scheme not in ('mysql', 'mysql2'):
-        raise ValueError("DATABASE_URL must start with mysql://")
+        raise ValueError("DATABASE_URL must start with mysql:// or sqlite://")
 
     if not parsed.path or parsed.path == '/':
         raise ValueError("DATABASE_URL is missing the database name (path)")
@@ -209,14 +218,15 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '10/day',
-        'user': '100/day'
-    },
+    # Throttling disabled for testing
+    # 'DEFAULT_THROTTLE_CLASSES': [
+    #     'rest_framework.throttling.AnonRateThrottle',
+    #     'rest_framework.throttling.UserRateThrottle'
+    # ],
+    # 'DEFAULT_THROTTLE_RATES': {
+    #     'anon': '10/day',
+    #     'user': '100/day'
+    # },
     # DEBUG=True  → full exception class, message, and stack trace
     # DEBUG=False → generic "unexpected error" message only
     'EXCEPTION_HANDLER': 'config.exception_handler.custom_exception_handler',
@@ -240,7 +250,7 @@ SIMPLE_JWT = {
 # CORS Settings
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080',
+    default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 

@@ -18,10 +18,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upload, Flag } from "lucide-react";
+import { Lock, User, LayoutDashboard, Users, Trophy, Settings, ChevronRight, Upload, Flag, AlertTriangle } from "lucide-react";
 import * as eventsService from "@/services/eventsService";
 import type { Track, TrackWriteData, DistCategory, TrackDirection, TrackType, RaceEvent, RaceEventWriteData, RaceEventUpdateData, RaceStatus, RaceResultInput, RaceParticipant } from "@/services/eventsService";
 import { toast } from "sonner";
+import { getSystemSettings, updateSystemSettings } from "@/services/settingsService";
 
 const AdminPanel: React.FC = () => {
   const navigate = useNavigate();
@@ -105,6 +106,11 @@ const AdminPanel: React.FC = () => {
 
   // Uma list view
   const [umaTab, setUmaTab] = useState<"setup" | "list" | "skills">("setup");
+
+  // Session timeout settings
+  const [sessionTimeout, setSessionTimeout] = useState(30);
+  const [sessionWarning, setSessionWarning] = useState(5);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
 
   // Skills tab
   const [managedSkills, setManagedSkills] = useState<SkillAdmin[]>([]);
@@ -206,6 +212,21 @@ const AdminPanel: React.FC = () => {
     if (isAuthenticated && isAdmin && activeSection === "races") {
       loadTracks();
       loadRaceEvents();
+    }
+    if (isAuthenticated && isAdmin && activeSection === "settings") {
+      const fetchSettings = async () => {
+        try {
+          const data = await getSystemSettings();
+          const timeoutSetting = data.settings.find(s => s.setting_key === 'SESSION_TIMEOUT_MINUTES');
+          const warningSetting = data.settings.find(s => s.setting_key === 'SESSION_WARNING_MINUTES');
+
+          if (timeoutSetting) setSessionTimeout(parseInt(timeoutSetting.setting_value));
+          if (warningSetting) setSessionWarning(parseInt(warningSetting.setting_value));
+        } catch (error) {
+          console.error('Failed to fetch settings:', error);
+        }
+      };
+      fetchSettings();
     }
   }, [isAuthenticated, isAdmin, activeSection]);
 
@@ -744,6 +765,37 @@ const AdminPanel: React.FC = () => {
       toast.error(msg);
     } finally {
       setIsAssigning(false);
+    }
+  };
+
+  const handleSaveSessionSettings = async () => {
+    // Validation
+    if (sessionTimeout < 1 || sessionTimeout > 60) {
+      toast.error('Timeout must be between 1 and 60 minutes');
+      return;
+    }
+
+    if (sessionWarning < 1 || sessionWarning > 10) {
+      toast.error('Warning time must be between 1 and 10 minutes');
+      return;
+    }
+
+    if (sessionWarning >= sessionTimeout) {
+      toast.error('Warning time must be less than timeout duration');
+      return;
+    }
+
+    setIsLoadingSettings(true);
+    try {
+      await updateSystemSettings({
+        timeout_minutes: sessionTimeout,
+        warning_minutes: sessionWarning,
+      });
+      toast.success('Session settings updated successfully');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to update settings');
+    } finally {
+      setIsLoadingSettings(false);
     }
   };
 
@@ -2413,12 +2465,61 @@ const AdminPanel: React.FC = () => {
           {activeSection === "settings" && (
             <Card>
               <CardHeader>
-                <CardTitle>Admin Settings (coming soon)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Basic configuration options for your admin tooling will eventually live here.
+                <CardTitle>Session Timeout Settings</CardTitle>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Configure automatic logout for inactive users
                 </p>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="timeout">
+                    Session Timeout (minutes)
+                  </Label>
+                  <Input
+                    id="timeout"
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={sessionTimeout}
+                    onChange={(e) => setSessionTimeout(parseInt(e.target.value) || 1)}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Users will be logged out after this many minutes of inactivity (1-60)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="warning">
+                    Warning Time (minutes)
+                  </Label>
+                  <Input
+                    id="warning"
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={sessionWarning}
+                    onChange={(e) => setSessionWarning(parseInt(e.target.value) || 1)}
+                    disabled={sessionTimeout <= 1}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Show warning modal this many minutes before timeout (1-10)
+                  </p>
+                </div>
+
+                <div className="flex items-center p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md">
+                  <AlertTriangle className="h-5 w-5 text-amber-500 mr-3 flex-shrink-0" />
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
+                    Current setting: Users will see a warning after <strong>{sessionTimeout - sessionWarning} minutes</strong> of inactivity,
+                    then auto-logout after <strong>{sessionTimeout} minutes</strong> total.
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleSaveSessionSettings}
+                  disabled={isLoadingSettings}
+                >
+                  {isLoadingSettings ? 'Saving...' : 'Save Settings'}
+                </Button>
               </CardContent>
             </Card>
           )}
