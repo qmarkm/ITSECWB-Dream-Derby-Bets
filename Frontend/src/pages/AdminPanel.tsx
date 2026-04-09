@@ -90,6 +90,7 @@ const AdminPanel: React.FC = () => {
   const [isSavingResults, setIsSavingResults] = useState(false);
 
   const [users, setUsers] = useState<BackendUser[]>([]);
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editingUser, setEditingUser] = useState<BackendUser | null>(null);
@@ -173,7 +174,7 @@ const AdminPanel: React.FC = () => {
     password_confirm: "",
   });
 
-  const isAdmin = user?.isStaff && user?.isSuperuser;
+  const isAdmin = hasAdminAccess;
 
   // Validation patterns — mirror backend regex rules exactly
   const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/;
@@ -206,10 +207,14 @@ const AdminPanel: React.FC = () => {
         return;
       }
 
-      if (result.user.isStaff && result.user.isSuperuser) {
+      try {
+        const adminUsers = await authService.adminGetUsers();
+        setUsers(adminUsers);
+        setHasAdminAccess(true);
         toast.success("Admin login successful");
         navigate("/adminpanel");
-      } else {
+      } catch {
+        setHasAdminAccess(false);
         toast.error("You do not have admin access");
       }
     } catch {
@@ -231,6 +236,16 @@ const AdminPanel: React.FC = () => {
       setIsUsersLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHasAdminAccess(false);
+      return;
+    }
+    authService.adminGetUsers()
+      .then(() => setHasAdminAccess(true))
+      .catch(() => setHasAdminAccess(false));
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && isAdmin && activeSection === "users") {
@@ -315,12 +330,15 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleToggleFlag = async (u: BackendUser, field: "is_active" | "is_staff" | "is_superuser") => {
+  const handleSetFlag = async (
+    u: BackendUser,
+    field: "is_active" | "is_staff" | "is_superuser",
+    value: boolean
+  ) => {
     try {
-      const updated = await authService.adminUpdateUser(u.id, {
-        [field]: !u[field],
-      });
+      const updated = await authService.adminUpdateUser(u.id, { [field]: value });
       setUsers((prev) => prev.map((usr) => (usr.id === updated.id ? updated : usr)));
+      toast.success("User permission updated.");
     } catch (error) {
       console.error("Failed to update user", error);
       toast.error("Failed to update user");
@@ -1102,7 +1120,7 @@ const AdminPanel: React.FC = () => {
                           Email
                         </th>
                         <th className="px-3 py-2 text-left font-medium text-xs uppercase tracking-wide text-muted-foreground">
-                          Flags
+                          Status
                         </th>
                         <th className="px-3 py-2 text-left font-medium text-xs uppercase tracking-wide text-muted-foreground">
                           Actions
@@ -1124,11 +1142,6 @@ const AdminPanel: React.FC = () => {
                         </tr>
                       ) : (
                         users.map((u) => {
-                          const privilegedCount = users.filter(
-                            (usr) => usr.is_staff && usr.is_superuser
-                          ).length;
-                          const isLastAdmin = privilegedCount <= 1 && u.is_staff && u.is_superuser;
-
                           return (
                             <tr key={u.id} className="border-t hover:bg-muted/40 transition-colors">
                               <td className="px-3 py-2">
@@ -1147,43 +1160,37 @@ const AdminPanel: React.FC = () => {
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium">{u.username}</span>
-                                  {u.is_staff && u.is_superuser && (
-                                    <Badge variant="outline" className="text-[10px]">
-                                      Admin
-                                    </Badge>
-                                  )}
+                                  <Badge variant="outline" className="text-[10px] uppercase">
+                                    {u.access_tier ?? "user"}
+                                  </Badge>
                                 </div>
                               </td>
-                              <td className="px-3 py-2">{u.email}</td>
+                              <td className="px-3 py-2">{u.email ?? "Hidden"}</td>
                               <td className="px-3 py-2">
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center gap-2">
-                                    <Switch
-                                      checked={u.is_active}
-                                      onCheckedChange={() => handleToggleFlag(u, "is_active")}
-                                    />
-                                    <span className="text-xs text-muted-foreground">Active</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Switch
-                                      checked={u.is_staff}
-                                      disabled={isLastAdmin}
-                                      onCheckedChange={() => handleToggleFlag(u, "is_staff")}
-                                    />
-                                    <span className="text-xs text-muted-foreground">
-                                      Staff{isLastAdmin ? " (required)" : ""}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Switch
-                                      checked={u.is_superuser}
-                                      disabled={isLastAdmin}
-                                      onCheckedChange={() => handleToggleFlag(u, "is_superuser")}
-                                    />
-                                    <span className="text-xs text-muted-foreground">
-                                      Superuser{isLastAdmin ? " (required)" : ""}
-                                    </span>
-                                  </div>
+                                <Badge variant={u.account_status === "active" ? "default" : "secondary"} className="text-[10px] uppercase">
+                                  {u.account_status === "active" ? "Active" : "Disabled"}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-wrap gap-2">
+                                  <Button variant="outline" size="sm" onClick={() => handleSetFlag(u, "is_active", true)}>
+                                    Activate
+                                  </Button>
+                                  <Button variant="outline" size="sm" onClick={() => handleSetFlag(u, "is_active", false)}>
+                                    Deactivate
+                                  </Button>
+                                  <Button variant="outline" size="sm" onClick={() => handleSetFlag(u, "is_staff", true)}>
+                                    Grant Staff
+                                  </Button>
+                                  <Button variant="outline" size="sm" onClick={() => handleSetFlag(u, "is_staff", false)}>
+                                    Revoke Staff
+                                  </Button>
+                                  <Button variant="outline" size="sm" onClick={() => handleSetFlag(u, "is_superuser", true)}>
+                                    Grant Superuser
+                                  </Button>
+                                  <Button variant="outline" size="sm" onClick={() => handleSetFlag(u, "is_superuser", false)}>
+                                    Revoke Superuser
+                                  </Button>
                                 </div>
                               </td>
                               <td className="px-3 py-2">
