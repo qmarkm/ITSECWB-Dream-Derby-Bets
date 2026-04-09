@@ -26,10 +26,6 @@ export const useUmas = () => {
 
     }, []);
 
-    useEffect(() => {
-        fetchUmas();
-    }, [fetchUmas]);
-
     const fetchMyUmas = useCallback(async () => {
         setIsLoading(true);
         setError(null);

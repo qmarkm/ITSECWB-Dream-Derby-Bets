@@ -17,6 +17,10 @@ _RACE_STATUS_ORDER = (
     RaceEvent.Status.completed,
 )
 
+_HTML_PATTERN = re.compile(r'<[^>]+>')
+_XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
+_VALID_URL_SCHEMES = ('http://', 'https://')
+
 
 def _race_status_index(status):
     try:
@@ -26,19 +30,20 @@ def _race_status_index(status):
 
 
 def _validate_race_datetimes(*, opening_dt, active_dt, race_start_dt, race_end_dt):
-    sequence = [opening_dt, active_dt, race_start_dt, race_end_dt]
-    present = [dt for dt in sequence if dt is not None]
-    for i in range(len(present) - 1):
-        if present[i] > present[i + 1]:
-            raise serializers.ValidationError(
-                'Race datetimes must be non-decreasing in this order: '
-                'opening_dt → active_dt → race_start_dt → race_end_dt.'
-            )
-
-
-_HTML_PATTERN = re.compile(r'<[^>]+>')
-_XSS_PATTERN = re.compile(r'(?i)(javascript\s*:|on\w+\s*=|<script)', re.IGNORECASE)
-_VALID_URL_SCHEMES = ('http://', 'https://')
+    try:
+        sequence = [opening_dt, active_dt, race_start_dt, race_end_dt]
+        present = [dt for dt in sequence if dt is not None]
+        for i in range(len(present) - 1):
+            if present[i] > present[i + 1]:
+                raise serializers.ValidationError(
+                    'Race dates must be in chronological order.'
+                )
+    except serializers.ValidationError:
+        raise
+    except Exception:
+        raise serializers.ValidationError('Invalid race dates.')
+    finally:
+        pass
 
 
 class TrackSerializer(serializers.ModelSerializer):
@@ -58,37 +63,54 @@ class TrackWriteSerializer(serializers.ModelSerializer):
         }
 
     def validate_name(self, value):
-        value = value.strip()
-        if not value:
-            raise serializers.ValidationError("Name cannot be empty.")
-        if len(value) > 100:
-            raise serializers.ValidationError("Name cannot exceed 100 characters.")
-        if _HTML_PATTERN.search(value):
-            raise serializers.ValidationError("Name must not contain HTML tags.")
-        if _XSS_PATTERN.search(value):
-            raise serializers.ValidationError("Name contains invalid content.")
-        return value
+        try:
+            value = value.strip()
+            if not value:
+                raise serializers.ValidationError("Name is required.")
+            if len(value) > 100:
+                raise serializers.ValidationError("Name is too long.")
+            if _HTML_PATTERN.search(value) or _XSS_PATTERN.search(value):
+                raise serializers.ValidationError("Name contains invalid characters.")
+            return value
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Invalid name.")
+        finally:
+            pass
 
     def validate_image(self, value):
-        if not value:
+        try:
+            if not value:
+                return value
+            if not value.startswith(_VALID_URL_SCHEMES):
+                raise serializers.ValidationError("Invalid image URL.")
+            if _XSS_PATTERN.search(value):
+                raise serializers.ValidationError("Invalid image URL.")
             return value
-        if not value.startswith(_VALID_URL_SCHEMES):
-            raise serializers.ValidationError("Image URL must use http or https.")
-        if _XSS_PATTERN.search(value):
-            raise serializers.ValidationError("Image URL contains invalid content.")
-        return value
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Invalid image URL.")
+        finally:
+            pass
 
     def validate_distance(self, value):
-        if not value:
+        try:
+            if not value:
+                return value
+            value = value.strip()
+            if len(value) > 10:
+                raise serializers.ValidationError("Distance is too long.")
+            if _HTML_PATTERN.search(value) or _XSS_PATTERN.search(value):
+                raise serializers.ValidationError("Distance contains invalid characters.")
             return value
-        value = value.strip()
-        if len(value) > 10:
-            raise serializers.ValidationError("Distance cannot exceed 10 characters.")
-        if _HTML_PATTERN.search(value):
-            raise serializers.ValidationError("Distance must not contain HTML tags.")
-        if _XSS_PATTERN.search(value):
-            raise serializers.ValidationError("Distance contains invalid content.")
-        return value
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Invalid distance.")
+        finally:
+            pass
 
 
 class ResultsWithUmaSerializer(serializers.ModelSerializer):
@@ -122,28 +144,39 @@ class RaceEventSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
     def get_umas(self, obj):
-        if obj.status == RaceEvent.Status.completed:
-            winner = obj.results.filter(place=1).first()
-            if winner:
-                return UmamusumeSerializer(winner.umamusume).data
-            return None
-        else:
+        try:
+            if obj.status == RaceEvent.Status.completed:
+                winner = obj.results.filter(place=1).first()
+                return UmamusumeSerializer(winner.umamusume).data if winner else None
             results = obj.results.all()
             if results.exists():
-                umas = [result.umamusume for result in results]
-                return UmamusumeSerializer(umas, many=True).data
+                return UmamusumeSerializer([r.umamusume for r in results], many=True).data
             return None
+        except Exception:
+            return None
+        finally:
+            pass
 
     def get_bid_count(self, obj):
-        return obj.bids.count()
+        try:
+            return obj.bids.count()
+        except Exception:
+            return 0
+        finally:
+            pass
 
     def get_participants(self, obj):
         """
         Returns all enrolled umamusume with their Results IDs.
         Clients use result IDs as the `uma` value when placing a bid.
         """
-        results = obj.results.all()
-        return ResultsWithUmaSerializer(results, many=True).data
+        try:
+            results = obj.results.all()
+            return ResultsWithUmaSerializer(results, many=True).data
+        except Exception:
+            return []
+        finally:
+            pass
 
 
 class RaceEventCreateSerializer(serializers.ModelSerializer):
@@ -160,18 +193,32 @@ class RaceEventCreateSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        _validate_race_datetimes(
-            opening_dt=data.get('opening_dt'),
-            active_dt=data.get('active_dt'),
-            race_start_dt=data.get('race_start_dt'),
-            race_end_dt=data.get('race_end_dt'),
-        )
-        return data
+        try:
+            _validate_race_datetimes(
+                opening_dt=data.get('opening_dt'),
+                active_dt=data.get('active_dt'),
+                race_start_dt=data.get('race_start_dt'),
+                race_end_dt=data.get('race_end_dt'),
+            )
+            return data
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError('Invalid race event data.')
+        finally:
+            pass
 
     def create(self, validated_data):
-        validated_data['host'] = self.context['request'].user
-        validated_data.setdefault('status', RaceEvent.Status.scheduled)
-        return super().create(validated_data)
+        try:
+            validated_data['host'] = self.context['request'].user
+            validated_data.setdefault('status', RaceEvent.Status.scheduled)
+            return super().create(validated_data)
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError('Unable to create race event.')
+        finally:
+            pass
 
 
 class RaceEventUpdateSerializer(serializers.ModelSerializer):
@@ -190,30 +237,31 @@ class RaceEventUpdateSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        inst = self.instance
-        opening_dt = data.get('opening_dt', inst.opening_dt)
-        active_dt = data.get('active_dt', inst.active_dt)
-        race_start_dt = data.get('race_start_dt', inst.race_start_dt)
-        race_end_dt = data.get('race_end_dt', inst.race_end_dt)
-        _validate_race_datetimes(
-            opening_dt=opening_dt,
-            active_dt=active_dt,
-            race_start_dt=race_start_dt,
-            race_end_dt=race_end_dt,
-        )
+        try:
+            inst = self.instance
+            _validate_race_datetimes(
+                opening_dt=data.get('opening_dt', inst.opening_dt),
+                active_dt=data.get('active_dt', inst.active_dt),
+                race_start_dt=data.get('race_start_dt', inst.race_start_dt),
+                race_end_dt=data.get('race_end_dt', inst.race_end_dt),
+            )
 
-        if 'status' in data and data['status'] != inst.status:
-            old_status = inst.status
-            new_status = data['status']
-            if old_status == RaceEvent.Status.completed:
-                raise serializers.ValidationError({
-                    'status': 'Cannot change status of a completed race.',
-                })
-            if _race_status_index(new_status) < _race_status_index(old_status):
-                raise serializers.ValidationError({
-                    'status': 'Cannot revert race status to an earlier phase.',
-                })
-        return data
+            if 'status' in data and data['status'] != inst.status:
+                if inst.status == RaceEvent.Status.completed:
+                    raise serializers.ValidationError({
+                        'status': 'Cannot modify a completed race.'
+                    })
+                if _race_status_index(data['status']) < _race_status_index(inst.status):
+                    raise serializers.ValidationError({
+                        'status': 'Invalid status transition.'
+                    })
+            return data
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError('Invalid race event data.')
+        finally:
+            pass
 
 
 class RaceResultInputSerializer(serializers.Serializer):
@@ -257,12 +305,16 @@ class BidsSerializer(serializers.ModelSerializer):
             return obj.race_event.track.name if obj.race_event.track else None
         except Exception:
             return None
+        finally:
+            pass
 
     def get_umamusume_name(self, obj):
         try:
             return obj.uma.umamusume.name if obj.uma else None
         except Exception:
             return None
+        finally:
+            pass
 
 
 class BidsCreateSerializer(serializers.ModelSerializer):
@@ -280,59 +332,75 @@ class BidsCreateSerializer(serializers.ModelSerializer):
         }
 
     def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Bet amount must be greater than zero.")
-        if value > MAX_BID_AMOUNT:
-            raise serializers.ValidationError(
-                f"Bet amount cannot exceed {MAX_BID_AMOUNT} coins."
-            )
-        return value
+        try:
+            if value <= 0:
+                raise serializers.ValidationError("Bet amount must be greater than zero.")
+            if value > MAX_BID_AMOUNT:
+                raise serializers.ValidationError("Bet amount exceeds the allowed limit.")
+            return value
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Invalid bet amount.")
+        finally:
+            pass
 
     def validate(self, data):
-        request = self.context['request']
-        race_event = self.context['race_event']
+        try:
+            request = self.context['request']
+            race_event = self.context['race_event']
 
-        if race_event.status != RaceEvent.Status.open:
-            raise serializers.ValidationError(
-                "This race event is not currently accepting bets."
-            )
+            if race_event.status != RaceEvent.Status.open:
+                raise serializers.ValidationError(
+                    "This race is not currently accepting bets."
+                )
 
-        profile = request.user.profile
-        if profile.balance < data['amount']:
-            raise serializers.ValidationError({"amount": "Insufficient balance."})
+            profile = request.user.profile
+            if profile.balance < data['amount']:
+                raise serializers.ValidationError({"amount": "Insufficient balance."})
 
-        if Bids.objects.filter(race_event=race_event, bidder=request.user).exists():
-            raise serializers.ValidationError(
-                "You have already placed a bid on this race."
-            )
+            if Bids.objects.filter(race_event=race_event, bidder=request.user).exists():
+                raise serializers.ValidationError(
+                    "You have already placed a bid on this race."
+                )
 
-        uma = data.get('uma')
-        participant_count = race_event.results.count()
-        if participant_count > 0 and uma is None:
-            raise serializers.ValidationError(
-                {"uma": "Select a runner to bet on."}
-            )
-        if uma is not None and uma.race_event != race_event:
-            raise serializers.ValidationError(
-                {"uma": "The selected umamusume is not participating in this race."}
-            )
+            uma = data.get('uma')
+            if race_event.results.count() > 0 and uma is None:
+                raise serializers.ValidationError({"uma": "Select a runner to bet on."})
+            if uma is not None and uma.race_event != race_event:
+                raise serializers.ValidationError(
+                    {"uma": "The selected runner is not participating in this race."}
+                )
 
-        return data
+            return data
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Unable to validate bid.")
+        finally:
+            pass
 
     @transaction.atomic
     def create(self, validated_data):
-        request = self.context['request']
-        race_event = self.context['race_event']
+        try:
+            request = self.context['request']
+            race_event = self.context['race_event']
 
-        profile = request.user.profile
-        profile.balance -= validated_data['amount']
-        profile.save()
+            profile = request.user.profile
+            profile.balance -= validated_data['amount']
+            profile.save()
 
-        return Bids.objects.create(
-            race_event=race_event,
-            bidder=request.user,
-            **validated_data,
-        )
+            return Bids.objects.create(
+                race_event=race_event,
+                bidder=request.user,
+                **validated_data,
+            )
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Unable to place bid.")
+        finally:
+            pass
 
 
 class BidsUpdateSerializer(serializers.ModelSerializer):
@@ -347,45 +415,57 @@ class BidsUpdateSerializer(serializers.ModelSerializer):
         fields = ['amount']
 
     def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Bet amount must be greater than zero.")
-        if value > MAX_BID_AMOUNT:
-            raise serializers.ValidationError(
-                f"Bet amount cannot exceed {MAX_BID_AMOUNT} coins."
-            )
-        return value
+        try:
+            if value <= 0:
+                raise serializers.ValidationError("Bet amount must be greater than zero.")
+            if value > MAX_BID_AMOUNT:
+                raise serializers.ValidationError("Bet amount exceeds the allowed limit.")
+            return value
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Invalid bet amount.")
+        finally:
+            pass
 
     def validate(self, data):
-        bid = self.instance
-        if bid.race_event.status != RaceEvent.Status.open:
-            raise serializers.ValidationError(
-                "This race is no longer accepting bet changes."
-            )
+        try:
+            bid = self.instance
+            if bid.race_event.status != RaceEvent.Status.open:
+                raise serializers.ValidationError(
+                    "This race is no longer accepting bet changes."
+                )
 
-        if 'amount' in data:
-            new_amount = data['amount']
-            old_amount = bid.amount
-            difference = new_amount - old_amount
-            if difference > 0:
-                request = self.context['request']
-                profile = request.user.profile
-                if profile.balance < difference:
-                    raise serializers.ValidationError(
-                        {"amount": "Insufficient balance for this bet increase."}
-                    )
+            if 'amount' in data:
+                difference = data['amount'] - bid.amount
+                if difference > 0:
+                    profile = self.context['request'].user.profile
+                    if profile.balance < difference:
+                        raise serializers.ValidationError(
+                            {"amount": "Insufficient balance."}
+                        )
 
-        return data
+            return data
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Unable to validate bid update.")
+        finally:
+            pass
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        if 'amount' in validated_data:
-            new_amount = validated_data['amount']
-            old_amount = instance.amount
-            difference = new_amount - old_amount
+        try:
+            if 'amount' in validated_data:
+                difference = validated_data['amount'] - instance.amount
+                profile = self.context['request'].user.profile
+                profile.balance -= difference  # negative diff = refund, positive = deduct
+                profile.save()
 
-            request = self.context['request']
-            profile = request.user.profile
-            profile.balance -= difference   # negative diff = refund, positive = deduct
-            profile.save()
-
-        return super().update(instance, validated_data)
+            return super().update(instance, validated_data)
+        except serializers.ValidationError:
+            raise
+        except Exception:
+            raise serializers.ValidationError("Unable to update bid.")
+        finally:
+            pass

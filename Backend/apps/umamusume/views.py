@@ -4,6 +4,8 @@ import json
 import os
 import time
 
+from PIL import Image, UnidentifiedImageError
+
 from django.conf import settings
 from django.core.files.storage import default_storage
 from rest_framework import status
@@ -37,8 +39,9 @@ def _build_umamusume_request_data(request, user_id, *, partial):
 
     if avatar_file:
         allowed_extensions = ['.png', '.gif']
-        file_extension = os.path.splitext(avatar_file.name)[1].lower()
+        allowed_pil_formats = {'PNG', 'GIF'}
 
+        file_extension = os.path.splitext(avatar_file.name)[1].lower()
         if file_extension not in allowed_extensions:
             return None, Response(
                 {'error': 'Invalid file type. Only PNG and GIF allowed.'},
@@ -51,6 +54,28 @@ def _build_umamusume_request_data(request, user_id, *, partial):
                 {'error': 'File too large. Maximum size is 5MB.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Verify actual file content matches claimed type (magic-byte check)
+        try:
+            img = Image.open(avatar_file)
+            img.verify()  # Raises on corrupt/invalid image
+            if img.format not in allowed_pil_formats:
+                return None, Response(
+                    {'error': 'File content does not match the allowed types (PNG, GIF).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except UnidentifiedImageError:
+            return None, Response(
+                {'error': 'Uploaded file is not a valid image.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            return None, Response(
+                {'error': 'Could not process the uploaded image.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        finally:
+            avatar_file.seek(0)  # Reset pointer after Pillow reads it
 
         timestamp = int(time.time())
         filename = f"uma_{user_id}_{timestamp}{file_extension}"
@@ -67,6 +92,11 @@ def _build_umamusume_request_data(request, user_id, *, partial):
 
     if 'skill_ids' in request.POST:
         skill_ids_raw = request.POST.getlist('skill_ids')
+        if len(skill_ids_raw) > 20:
+            return None, Response(
+                {'error': 'Too many skills selected. Maximum is 20.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             data['skill_ids'] = [int(i) for i in skill_ids_raw if i and i.strip()]
         except (ValueError, TypeError):
@@ -404,7 +434,11 @@ def import_umas_csv(request):
         skipped_count = 0
         errors = []
 
+        MAX_ROWS = 200
         for row_number, row in enumerate(reader, start=2):
+            if row_number - 1 > MAX_ROWS:
+                errors.append({'row': row_number, 'name': '(skipped)', 'reason': f'Row limit of {MAX_ROWS} exceeded.'})
+                break
             try:
                 data = {
                     'name': row.get('name', ''),

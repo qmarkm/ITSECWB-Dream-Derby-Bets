@@ -38,6 +38,10 @@ export interface Uma {
     skills: Skill[]; 
     aptitudes: Aptitude; 
 
+    // Race record
+    races_won: number;
+    races_lost: number;
+
     // System fields
     created_at: string; // ISO Date string
     updated_at: string;
@@ -105,37 +109,30 @@ export const getSkills = async(): Promise<Skill[]> => {
 }
 
 export const createUma = async (data: NewUmaProfile): Promise<Uma> => {
-    if (data.avatar && typeof data.avatar !== 'string') {
-        const formData = new FormData();
+    const formData = new FormData();
 
-        // Append simple fields
-        formData.append('name', data.name);
-        if (data.base_uma_id) {
-            formData.append('base_uma_id', data.base_uma_id.toString());
-        }
-        formData.append('speed', data.speed.toString());
-        formData.append('stamina', data.stamina.toString());
-        formData.append('power', data.power.toString());
-        formData.append('guts', data.guts.toString());
-        formData.append('wit', data.wit.toString());
+    formData.append('name', data.name);
+    if (data.base_uma_id != null) {
+        formData.append('base_uma_id', data.base_uma_id.toString());
+    }
+    formData.append('speed', data.speed.toString());
+    formData.append('stamina', data.stamina.toString());
+    formData.append('power', data.power.toString());
+    formData.append('guts', data.guts.toString());
+    formData.append('wit', data.wit.toString());
 
-        // Append Avatar File
-        formData.append('avatar', data.avatar); 
-
-        // Append Skills (List of IDs)
-        data.skill_ids.forEach(id => formData.append('skill_ids', id.toString()));
-
-        // Append Aptitudes (Nested Object -> JSON String)
-        // Note: Your backend create_serializer needs to handle this JSON parsing!
-        formData.append('aptitudes', JSON.stringify(data.aptitudes));
-
-        const response = await apiClient.post<Uma>('/api/umamusume/create/', formData, {
-            headers: {'Content-Type': 'multipart/form-data'}
-        });
-        return response.data;
+    if (data.avatar instanceof File) {
+        formData.append('avatar', data.avatar);
+    } else if (typeof data.avatar === 'string' && data.avatar) {
+        formData.append('avatar_url', data.avatar);
     }
 
-    const response = await apiClient.post<Uma>('/api/umamusume/create/', data);
+    data.skill_ids.forEach(id => formData.append('skill_ids', id.toString()));
+    formData.append('aptitudes', JSON.stringify(data.aptitudes));
+
+    const response = await apiClient.post<Uma>('/api/umamusume/create/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
 }
 

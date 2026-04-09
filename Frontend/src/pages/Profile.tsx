@@ -283,8 +283,8 @@ const Profile: React.FC = () => {
                         </p>
                       </div>
                       <div className="text-right text-sm text-muted-foreground">
-                        <p>W: temp</p>
-                        <p>L: temp</p>
+                        <p>W: {uma.races_won}</p>
+                        <p>L: {uma.races_lost}</p>
                       </div>
                     </Link>
                   ))}
