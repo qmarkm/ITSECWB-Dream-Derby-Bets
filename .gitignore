@@ -29,3 +29,5 @@ Backend/logs/
 # Markdown files
 nul
 PROGRESS.md
+Backend/logs/app.log
+Backend/logs/security.log
