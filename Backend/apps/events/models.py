@@ -49,7 +49,6 @@ class RaceEvent(models.Model):
     track = models.ForeignKey(Track, on_delete=models.CASCADE, related_name='race_event', null=True, blank=True)
 
     opening_dt = models.DateTimeField(null=True)
-    is_published = models.BooleanField(default=False)
 
     active_dt = models.DateTimeField(null=True)
 

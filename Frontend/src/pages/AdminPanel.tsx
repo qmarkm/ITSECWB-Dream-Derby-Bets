@@ -80,7 +80,7 @@ const AdminPanel: React.FC = () => {
   const RACE_STATUSES: RaceStatus[] = ['scheduled', 'open', 'active', 'race_ongoing', 'completed'];
 
   const EMPTY_RACE_FORM: RaceEventWriteData = {
-    track: null, opening_dt: null, is_published: false,
+    track: null, opening_dt: null,
     active_dt: null, race_start_dt: null, race_end_dt: null,
   };
   const [raceForm, setRaceForm] = useState<RaceEventWriteData>(EMPTY_RACE_FORM);
@@ -676,12 +676,10 @@ const AdminPanel: React.FC = () => {
     setEditingRace(race);
     setRaceEditForm({
       status: race.status,
-      track: race.track,
       opening_dt: race.opening_dt,
-      is_published: race.is_published,
-      active_dt: race.active_dt,
+      active_dt: null,
       race_start_dt: race.race_start_dt,
-      race_end_dt: race.race_end_dt,
+      race_end_dt: null,
     });
     setRaceDeleteConfirmId(null);
   };
@@ -2363,14 +2361,6 @@ const AdminPanel: React.FC = () => {
                             onChange={(e) => setRaceForm({ ...raceForm, race_end_dt: localToUtcIso(e.target.value) })}
                           />
                         </div>
-                        <div className="flex items-center gap-2 pt-5">
-                          <Switch
-                            id="r-published"
-                            checked={!!raceForm.is_published}
-                            onCheckedChange={(v) => setRaceForm({ ...raceForm, is_published: v })}
-                          />
-                          <Label htmlFor="r-published">Published</Label>
-                        </div>
                       </div>
                       <Button type="submit" size="sm" disabled={isSavingRace}>
                         {isSavingRace ? "Creating..." : "Create Race"}
@@ -2509,14 +2499,6 @@ const AdminPanel: React.FC = () => {
                             value={utcToLocalInput(raceEditForm.race_end_dt ?? editingRace.race_end_dt)}
                             onChange={(e) => setRaceEditForm({ ...raceEditForm, race_end_dt: localToUtcIso(e.target.value) })}
                           />
-                        </div>
-                        <div className="flex items-center gap-2 pt-5">
-                          <Switch
-                            id="re-published"
-                            checked={raceEditForm.is_published ?? editingRace.is_published}
-                            onCheckedChange={(v) => setRaceEditForm({ ...raceEditForm, is_published: v })}
-                          />
-                          <Label htmlFor="re-published">Published</Label>
                         </div>
                       </div>
 

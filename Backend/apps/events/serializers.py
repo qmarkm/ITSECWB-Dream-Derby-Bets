@@ -169,17 +169,11 @@ class RaceEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = RaceEvent
         fields = [
-            'id', 'created_at', 'host', 'host_username', 'status',
-            'opening_dt', 'is_published', 'active_dt',
-            'race_start_dt', 'race_end_dt',
-            'umas', 'bid_count', 'track', 'track_name', 'participants',
+            'id', 'created_at', 'host_username', 'status',
+            'opening_dt', 'race_start_dt',
+            'umas', 'bid_count', 'track_name', 'participants',
         ]
-        read_only_fields = [
-            'id', 'created_at', 'host', 'host_username', 'status',
-            'opening_dt', 'is_published', 'active_dt',
-            'race_start_dt', 'race_end_dt',
-            'umas', 'bid_count', 'track', 'track_name', 'participants',
-        ]
+        read_only_fields = fields
 
     def get_umas(self, obj):
         try:
@@ -221,7 +215,7 @@ class RaceEventSerializer(serializers.ModelSerializer):
 class RaceEventCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = RaceEvent
-        fields = ['track', 'opening_dt', 'is_published', 'active_dt',
+        fields = ['track', 'opening_dt', 'active_dt',
                   'race_start_dt', 'race_end_dt']
         extra_kwargs = {
             'track': {'required': False, 'allow_null': True},
@@ -274,13 +268,12 @@ class RaceEventCreateSerializer(serializers.ModelSerializer):
 class RaceEventUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = RaceEvent
-        fields = ['status', 'track', 'opening_dt', 'is_published',
+        fields = ['status', 'track', 'opening_dt',
                   'active_dt', 'race_start_dt', 'race_end_dt']
         extra_kwargs = {
             'status': {'required': False},
             'track': {'required': False, 'allow_null': True},
             'opening_dt': {'required': False, 'allow_null': True},
-            'is_published': {'required': False},
             'active_dt': {'required': False, 'allow_null': True},
             'race_start_dt': {'required': False, 'allow_null': True},
             'race_end_dt': {'required': False, 'allow_null': True},
