@@ -49,7 +49,7 @@ export const EventCard: React.FC<EventCardProps> = ({ race }) => {
           <div className="flex items-center gap-3 p-3 rounded-lg bg-accent/10 border border-accent/20">
             <Trophy className="h-5 w-5 text-accent shrink-0" />
             <Avatar className="border-2 border-accent h-10 w-10 shrink-0">
-              <AvatarImage src={winner.umamusume_data?.image ?? undefined} alt={winner.umamusume_data?.name} />
+              <AvatarImage src={winner.umamusume_data?.avatar_url ?? undefined} alt={winner.umamusume_data?.name} />
               <AvatarFallback className="text-xs bg-accent/10 text-accent">
                 {(winner.umamusume_data?.name ?? "?").charAt(0)}
               </AvatarFallback>
@@ -66,7 +66,7 @@ export const EventCard: React.FC<EventCardProps> = ({ race }) => {
                 <div className="flex -space-x-2">
                   {race.participants.slice(0, 4).map((p) => (
                     <Avatar key={p.id} className="border-2 border-card h-9 w-9">
-                      <AvatarImage src={p.umamusume_data?.image ?? undefined} alt={p.umamusume_data?.name} />
+                      <AvatarImage src={p.umamusume_data?.avatar_url ?? undefined} alt={p.umamusume_data?.name} />
                       <AvatarFallback className="text-xs bg-primary/10 text-primary">
                         {(p.umamusume_data?.name ?? "?").charAt(0)}
                       </AvatarFallback>

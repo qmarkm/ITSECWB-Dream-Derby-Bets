@@ -27,7 +27,7 @@ from .serializers import (
 def index(request):
     try:
         races = RaceEvent.objects.all()
-        serializer = RaceEventSerializer(races, many=True)
+        serializer = RaceEventSerializer(races, many=True, context={'request': request})
         return Response(serializer.data)
     except Exception:
         return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -127,9 +127,9 @@ def delete_track(request, id):
 def get_race_event(request, id):
     try:
         race = RaceEvent.objects.get(id=id)
-        race_serializer = RaceEventSerializer(race)
+        race_serializer = RaceEventSerializer(race, context={'request': request})
         bids = race.bids.all()
-        bids_serializer = BidsSerializer(bids, many=True)
+        bids_serializer = BidsSerializer(bids, many=True, context={'request': request})
         return Response({
             'race': race_serializer.data,
             'bids': bids_serializer.data,
