@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework import serializers
 from .models import Track, RaceEvent, Results, Bids
+from ..umamusume.models import Umamusume
 from ..umamusume.serializers import UmamusumeSerializer
 from ..utils.validators import validate_uploaded_image
 
@@ -121,13 +122,36 @@ class TrackWriteSerializer(serializers.ModelSerializer):
             pass
 
 
+class UmamusumeSummarySerializer(serializers.ModelSerializer):
+    """Lightweight serializer for race listings — only exposes what the UI needs."""
+    avatar_url = serializers.SerializerMethodField()
+    user_username = serializers.CharField(source='user.username', read_only=True)
+
+    class Meta:
+        model = Umamusume
+        fields = ['id', 'name', 'avatar_url', 'user_username']
+        read_only_fields = fields
+
+    def get_avatar_url(self, obj):
+        request = self.context.get('request')
+        if obj.avatar and hasattr(obj.avatar, 'url'):
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        if obj.uma and obj.uma.avatar and hasattr(obj.uma.avatar, 'url'):
+            if request:
+                return request.build_absolute_uri(obj.uma.avatar.url)
+            return obj.uma.avatar.url
+        return None
+
+
 class ResultsWithUmaSerializer(serializers.ModelSerializer):
     """
     Results entry with umamusume data.
     Used to expose race participants with their result IDs so the frontend
     can reference them when placing a bet (Bids.uma FK → Results).
     """
-    umamusume_data = UmamusumeSerializer(source='umamusume', read_only=True)
+    umamusume_data = UmamusumeSummarySerializer(source='umamusume', read_only=True)
 
     class Meta:
         model = Results
@@ -159,12 +183,13 @@ class RaceEventSerializer(serializers.ModelSerializer):
 
     def get_umas(self, obj):
         try:
+            ctx = self.context
             if obj.status == RaceEvent.Status.completed:
                 winner = obj.results.filter(place=1).first()
-                return UmamusumeSerializer(winner.umamusume).data if winner else None
+                return UmamusumeSummarySerializer(winner.umamusume, context=ctx).data if winner else None
             results = obj.results.all()
             if results.exists():
-                return UmamusumeSerializer([r.umamusume for r in results], many=True).data
+                return UmamusumeSummarySerializer([r.umamusume for r in results], many=True, context=ctx).data
             return None
         except Exception:
             return None
@@ -186,7 +211,7 @@ class RaceEventSerializer(serializers.ModelSerializer):
         """
         try:
             results = obj.results.all()
-            return ResultsWithUmaSerializer(results, many=True).data
+            return ResultsWithUmaSerializer(results, many=True, context=self.context).data
         except Exception:
             return []
         finally:

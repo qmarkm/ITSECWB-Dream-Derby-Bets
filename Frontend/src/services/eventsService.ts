@@ -32,11 +32,6 @@ export interface RaceParticipant {
         id: number;
         name: string;
         avatar_url: string | null;
-        speed: number;
-        stamina: number;
-        power: number;
-        guts: number;
-        wit: number;
         user_username: string;
     } | null;
     place: number | null;

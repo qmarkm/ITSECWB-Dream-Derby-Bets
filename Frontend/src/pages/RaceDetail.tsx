@@ -299,14 +299,10 @@ const RaceDetail: React.FC = () => {
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold truncate">{p.umamusume_data?.name ?? `Uma #${p.umamusume}`}</p>
-                            {p.umamusume_data && (
-                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
-                                <span>SPD {p.umamusume_data.speed}</span>
-                                <span>STA {p.umamusume_data.stamina}</span>
-                                <span>POW {p.umamusume_data.power}</span>
-                                <span>GUT {p.umamusume_data.guts}</span>
-                                <span>WIT {p.umamusume_data.wit}</span>
-                              </div>
+                            {p.umamusume_data?.user_username && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Trainer: {p.umamusume_data.user_username}
+                              </p>
                             )}
                           </div>
                           {isOpen && !myBid && isSelected && (
