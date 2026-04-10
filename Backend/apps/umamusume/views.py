@@ -14,6 +14,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Skill, Umas, Umamusume
+from ..utils.errors import server_error
 from .serializers import (
     SkillAdminSerializer,
     SkillCreateSerializer,
@@ -78,8 +79,8 @@ def index(request):
         umamusume = Umamusume.objects.all()
         serializer = UmamusumeSerializer(umamusume, many=True, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -93,8 +94,8 @@ def view_umamusume(request, id):
         return Response(serializer.data)
     except Umamusume.DoesNotExist:
         return Response({'error': 'Umamusume not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -106,8 +107,8 @@ def get_my_umas(request):
         umamusume = Umamusume.objects.filter(user=request.user)
         serializer = UmamusumeSerializer(umamusume, many=True, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -119,8 +120,8 @@ def get_skills(request):
         skills = Skill.objects.all()
         serializer = SkillSerializer(skills, many=True)
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -132,8 +133,8 @@ def get_umas(request):
         umas = Umas.objects.filter(is_active=True)
         serializer = UmaSerializer(umas, many=True, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -147,8 +148,8 @@ def admin_get_umas(request):
         umas = Umas.objects.all()
         serializer = UmaSerializer(umas, many=True, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -165,8 +166,8 @@ def toggle_uma_active(request, id):
         return Response(UmaSerializer(uma, context={'request': request}).data)
     except Umas.DoesNotExist:
         return Response({'error': 'Uma not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -190,8 +191,8 @@ def update_uma(request, id):
 
     except Umas.DoesNotExist:
         return Response({'error': 'Uma not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -210,8 +211,8 @@ def unassign_skill(request, id):
 
     except Skill.DoesNotExist:
         return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -227,8 +228,8 @@ def admin_get_skills(request):
         serializer = SkillAdminSerializer(skills, many=True)
         return Response(serializer.data)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -249,8 +250,8 @@ def update_skill(request, id):
 
     except Skill.DoesNotExist:
         return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -268,8 +269,8 @@ def delete_skill(request, id):
 
     except Skill.DoesNotExist:
         return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -287,8 +288,8 @@ def create_skill(request):
             return Response(SkillSerializer(skill).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -330,8 +331,8 @@ def assign_skill_to_uma(request):
         return Response({'error': 'Skill not found.'}, status=status.HTTP_404_NOT_FOUND)
     except Umas.DoesNotExist:
         return Response({'error': 'Uma not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -352,8 +353,8 @@ def create_uma(request):
             return Response(UmaSerializer(uma, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -450,8 +451,8 @@ def import_umas_csv(request):
             'errors': errors,
         }, status=status.HTTP_200_OK)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         if csv_file:
             csv_file.close()
@@ -471,8 +472,8 @@ def create_umamusume(request):
             return Response(UmamusumeSerializer(umamusume, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -502,8 +503,8 @@ def update_umamusume(request, id):
 
     except Umamusume.DoesNotExist:
         return Response({'error': 'Umamusume not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -522,8 +523,8 @@ def delete_umamusume(request, id):
 
     except Umamusume.DoesNotExist:
         return Response({'error': 'Umamusume not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -550,7 +551,7 @@ def delete_uma(request, id):
         uma.delete()
         return Response({'message': 'Uma deleted successfully.'}, status=status.HTTP_200_OK)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass

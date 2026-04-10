@@ -8,6 +8,7 @@ from rest_framework.response import Response
 
 from .models import Bids, RaceEvent, Results, Track
 from ..umamusume.models import Umamusume
+from ..utils.errors import server_error
 from .serializers import (
     BidsCreateSerializer,
     BidsSerializer,
@@ -29,8 +30,8 @@ def index(request):
         races = RaceEvent.objects.all()
         serializer = RaceEventSerializer(races, many=True, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -42,8 +43,8 @@ def get_tracks(request):
         tracks = Track.objects.all()
         serializer = TrackSerializer(tracks, many=True, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -64,8 +65,8 @@ def create_track(request):
             return Response(TrackSerializer(track, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -89,8 +90,8 @@ def update_track(request, id):
 
     except Track.DoesNotExist:
         return Response({'error': 'Track not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -116,8 +117,8 @@ def delete_track(request, id):
 
     except Track.DoesNotExist:
         return Response({'error': 'Track not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -136,8 +137,8 @@ def get_race_event(request, id):
         })
     except RaceEvent.DoesNotExist:
         return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -155,8 +156,8 @@ def create_race_event(request):
             return Response(RaceEventSerializer(race).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -177,8 +178,8 @@ def update_race_event(request, id):
 
     except RaceEvent.DoesNotExist:
         return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -203,8 +204,8 @@ def delete_race_event(request, id):
 
     except RaceEvent.DoesNotExist:
         return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -305,8 +306,8 @@ def set_race_results(request, id):
 
     except RaceEvent.DoesNotExist:
         return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -354,8 +355,8 @@ def enroll_umamusume(request, id):
 
     except RaceEvent.DoesNotExist:
         return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -404,8 +405,8 @@ def place_bid(request, id):
 
     except RaceEvent.DoesNotExist:
         return Response({'error': 'Race not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -442,8 +443,8 @@ def my_bids(request):
         serializer = BidsSerializer(bids, many=True)
         return Response(serializer.data)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -508,7 +509,7 @@ def bid_detail(request, bid_id):
 
     except Bids.DoesNotExist:
         return Response({'error': 'Bid not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
