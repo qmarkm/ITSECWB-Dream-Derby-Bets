@@ -44,11 +44,7 @@ export interface RaceEvent {
     host_username: string;
     status: RaceStatus;
     opening_dt: string | null;
-    is_published: boolean;
-    active_dt: string | null;
     race_start_dt: string | null;
-    race_end_dt: string | null;
-    track: number | null;
     track_name: string | null;
     umas: any;
     bid_count: number;
@@ -58,7 +54,6 @@ export interface RaceEvent {
 export interface RaceEventWriteData {
     track?: number | null;
     opening_dt?: string | null;
-    is_published?: boolean;
     active_dt?: string | null;
     race_start_dt?: string | null;
     race_end_dt?: string | null;
