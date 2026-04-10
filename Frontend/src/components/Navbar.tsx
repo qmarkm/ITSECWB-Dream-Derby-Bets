@@ -14,12 +14,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { mockRaces, mockUmamusumes } from "@/data/mockData";
-import { Umamusume } from "@/types";
+import { getRaceEvents } from "@/services/eventsService";
+import type { RaceEvent } from "@/services/eventsService";
 import * as authService from "@/services/authService";
 import type { User as BackendUser } from "@/services/authService";
 
-type SearchFilter = "races" | "users" | "umamusumes";
+type SearchFilter = "races" | "users";
 
 export const Navbar: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -30,41 +30,41 @@ export const Navbar: React.FC = () => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [filters, setFilters] = useState<SearchFilter[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [raceEvents, setRaceEvents] = useState<RaceEvent[]>([]);
   const [searchedUsers, setSearchedUsers] = useState<BackendUser[]>([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // Get all umamusumes including user-created ones
-  const getAllUmamusumes = (): Umamusume[] => {
-    const storedUmas: Umamusume[] = JSON.parse(localStorage.getItem("userUmamusumes") || "[]");
-    return [...mockUmamusumes, ...storedUmas];
-  };
-
-  const activeFilters = filters.length === 0 ? ["races", "users", "umamusumes"] : filters;
+  const activeFilters = filters.length === 0 ? ["races", "users"] : filters;
 
   const filteredRaces = searchQuery.trim() && activeFilters.includes("races")
-    ? mockRaces
-        .filter((race) =>
-          race.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          race.description.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        .slice(0, 3)
+    ? raceEvents
+        .filter((race) => {
+          const query = searchQuery.toLowerCase();
+          return (
+            (race.track_name ?? "").toLowerCase().includes(query) ||
+            race.host_username.toLowerCase().includes(query) ||
+            race.status.toLowerCase().includes(query) ||
+            race.participants.some((p) =>
+              (p.umamusume_data?.name ?? "").toLowerCase().includes(query)
+            )
+          );
+        })
+        .slice(0, 5)
     : [];
 
   const filteredUsers = searchQuery.trim() && activeFilters.includes("users")
     ? searchedUsers.slice(0, 3)
     : [];
 
-  const filteredUmamusumes = searchQuery.trim() && activeFilters.includes("umamusumes")
-    ? getAllUmamusumes()
-        .filter((uma) =>
-          uma.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          uma.owner.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        .slice(0, 3)
-    : [];
+  const hasResults = filteredRaces.length > 0 || filteredUsers.length > 0;
 
-  const hasResults = filteredRaces.length > 0 || filteredUsers.length > 0 || filteredUmamusumes.length > 0;
+  // Fetch race events once on mount
+  useEffect(() => {
+    getRaceEvents()
+      .then(setRaceEvents)
+      .catch(() => {});
+  }, []);
 
   // Search users from backend when query changes
   useEffect(() => {
@@ -105,16 +105,10 @@ export const Navbar: React.FC = () => {
     setShowDropdown(value.trim().length > 0);
   };
 
-  const handleRaceClick = (raceId: string) => {
+  const handleRaceClick = (raceId: number) => {
     setShowDropdown(false);
     setSearchQuery("");
     navigate(`/race/${raceId}`);
-  };
-
-  const handleUmamusumeClick = (umaId: string) => {
-    setShowDropdown(false);
-    setSearchQuery("");
-    navigate(`/umamusume/${umaId}`);
   };
 
   const handleUserClick = (username: string) => {
@@ -163,44 +157,22 @@ export const Navbar: React.FC = () => {
                 >
                   <span className="text-lg">🏇</span>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{race.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{race.description}</p>
+                    <p className="font-medium text-sm truncate">
+                      {race.track_name || `Race #${race.id}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      Host: {race.host_username} · {race.participants.length} runners
+                    </p>
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    race.status === 'active' ? 'bg-green-500/20 text-green-500' :
-                    race.status === 'upcoming' ? 'bg-blue-500/20 text-blue-500' :
+                    race.status === 'active' || race.status === 'race_ongoing' ? 'bg-green-500/20 text-green-500' :
+                    race.status === 'scheduled' ? 'bg-blue-500/20 text-blue-500' :
                     race.status === 'completed' ? 'bg-gray-500/20 text-gray-500' :
                     race.status === 'open' ? 'bg-yellow-500/20 text-yellow-500' :
                     'bg-red-500/20 text-red-500'
                   }`}>
                     {race.status}
                   </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Umamusumes Section */}
-          {filteredUmamusumes.length > 0 && (
-            <div>
-              <div className="px-4 py-2 bg-secondary/50 text-xs font-semibold text-muted-foreground flex items-center gap-2">
-                🐴 Umamusumes
-              </div>
-              {filteredUmamusumes.map((uma) => (
-                <button
-                  key={uma.id}
-                  onClick={() => handleUmamusumeClick(uma.id)}
-                  className="w-full px-4 py-3 text-left hover:bg-accent/50 flex items-center gap-3 transition-colors border-b border-border/50 last:border-b-0"
-                >
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={uma.picture} alt={uma.name} />
-                    <AvatarFallback>{uma.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{uma.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">Trainer: {uma.owner}</p>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{uma.odds}x</span>
                 </button>
               ))}
             </div>
@@ -262,7 +234,6 @@ export const Navbar: React.FC = () => {
           <div className="space-y-2">
             {[
               { id: "races", label: "Races", icon: "🏇" },
-              { id: "umamusumes", label: "Umamusumes", icon: "🐴" },
               { id: "users", label: "Users", icon: "👤" },
             ].map((f) => (
               <label key={f.id} className="flex items-center gap-2 cursor-pointer">
@@ -300,7 +271,7 @@ export const Navbar: React.FC = () => {
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   type="search"
-                  placeholder="Search races, umamusumes, users..."
+                  placeholder="Search races, users..."
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   onFocus={() => searchQuery.trim() && setShowDropdown(true)}
