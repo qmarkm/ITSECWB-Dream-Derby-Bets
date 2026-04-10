@@ -56,6 +56,7 @@ def _get_client_ip(request):
     return request.META.get('REMOTE_ADDR', 'unknown')
 
 from .models import LoginAttempts, User, UserProfile, SystemSettings
+from ..utils.errors import server_error
 from .serializers import (
     AdminUserReadSerializer,
     AdminUserUpdateSerializer,
@@ -97,8 +98,8 @@ def index(request):
         users = User.objects.all()
         serializer = PublicUserSerializer(users, many=True, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -127,8 +128,8 @@ def admin_user_list(request):
         )
         return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -142,8 +143,8 @@ def view_profile(request, username):
         return Response(serializer.data)
     except User.DoesNotExist:
         return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -165,8 +166,8 @@ def create_profile(request):
         )
         return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -247,8 +248,8 @@ def admin_user_detail(request, user_id):
 
     except User.DoesNotExist:
         return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -319,11 +320,11 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             )
             return response
 
-        except Exception:
+        except Exception as exc:
             security_log.exception(
                 'LOGIN_ERROR | user=%s ip=%s', username, ip
             )
-            return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return server_error(exc)
         finally:
             pass
 
@@ -344,8 +345,8 @@ def logout(request):
             request.user.username, _get_client_ip(request), request.user.pk,
         )
         return Response({'message': 'Logout successful.'}, status=status.HTTP_200_OK)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -356,8 +357,8 @@ def get_current_user(request):
     try:
         serializer = CurrentUserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -382,8 +383,8 @@ def update_profile(request):
         )
         return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -403,8 +404,8 @@ def update_account(request):
         )
         return Response({'error': 'Invalid request.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -436,8 +437,8 @@ def add_balance(request):
         profile.save()
         return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -472,8 +473,8 @@ def deduct_balance(request):
         profile.save()
         return Response(CurrentUserSerializer(request.user, context={'request': request}).data)
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -508,8 +509,8 @@ def upload_avatar(request):
 
     except UserProfile.DoesNotExist:
         return Response({'error': 'User profile not found.'}, status=status.HTTP_404_NOT_FOUND)
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         if avatar_file:
             avatar_file.close()
@@ -527,8 +528,8 @@ def get_session_settings(request):
             'timeout_minutes': timeout_minutes,
             'warning_minutes': warning_minutes,
         })
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -680,8 +681,8 @@ def manage_system_settings(request):
                 'syslog_port': int(SystemSettings.get_setting('SYSLOG_PORT', 514)),
             })
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -822,8 +823,8 @@ def get_security_logs(request):
         source = 'remote' if settings.SYSLOG_HOST else 'local'
         return Response({'logs': entries, 'total': len(lines), 'source': source})
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
 
@@ -900,7 +901,7 @@ def delete_security_logs(request):
 
         return Response({'deleted': deleted, 'remaining': len(kept)})
 
-    except Exception:
-        return Response({'error': 'An unexpected error occurred.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as exc:
+        return server_error(exc)
     finally:
         pass
